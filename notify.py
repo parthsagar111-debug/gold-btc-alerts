@@ -18,16 +18,26 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")  # NOT your normal
 NOTIFY_EMAIL_TO = os.environ.get("NOTIFY_EMAIL_TO", "")  # where alerts get sent
 
 
+def _ascii_safe(text: str) -> str:
+    """
+    HTTP headers must be latin-1/ASCII safe. Emojis (like checkmarks, circles)
+    break ntfy's Title header. Strip non-ASCII characters for the header only -
+    the message body can still contain emojis freely.
+    """
+    return text.encode("ascii", "ignore").decode("ascii").strip()
+
+
 def send_ntfy(title: str, message: str, priority: str = "default") -> bool:
     """Sends a push notification via ntfy.sh. Returns True if it likely succeeded."""
     if not NTFY_TOPIC:
         print("[ntfy] Skipped - NTFY_TOPIC not set.")
         return False
     try:
+        safe_title = _ascii_safe(title) or "Alert"
         resp = requests.post(
             f"https://ntfy.sh/{NTFY_TOPIC}",
             data=message.encode("utf-8"),
-            headers={"Title": title, "Priority": priority},
+            headers={"Title": safe_title, "Priority": priority},
             timeout=10,
         )
         ok = resp.status_code == 200
