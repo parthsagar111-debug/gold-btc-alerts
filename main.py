@@ -146,10 +146,12 @@ def test_notify_endpoint():
 def run_endpoint():
     """
     This is the URL cron-job.org will ping every hour.
-    Triggers the actual check-and-alert logic and returns a small JSON summary.
+    Triggers the actual check-and-alert logic. Returns a minimal plain-text
+    response (not full state) because cron-job.org's free tier aborts
+    requests with overly large responses.
     """
-    state = run_check()
-    return jsonify({"status": "ok", "ran_at": datetime.now(timezone.utc).isoformat(), "state": state})
+    run_check()
+    return "ok", 200
 
 
 if __name__ == "__main__":
