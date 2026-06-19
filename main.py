@@ -10,7 +10,7 @@ Each run:
   1. Fetches latest Gold + Bitcoin candles
   2. Computes indicators
   3. Checks if a NEW signal just fired (vs the last run)
-  4. If yes -> sends notification via Ntfy + Email
+  4. If yes -> sends a push notification via Ntfy
   5. Also sends one daily status ping at a fixed hour, even with no new signal
 
 State (last signal seen) is persisted to a small JSON file so we don't
@@ -122,13 +122,12 @@ def home():
 @app.route("/test-notify")
 def test_notify_endpoint():
     """
-    Sends an immediate test notification via both Ntfy and Email,
-    regardless of signals or schedule. Use this to verify your
-    environment variables are correct.
+    Sends an immediate test notification via Ntfy, regardless of signals
+    or schedule. Use this to verify your NTFY_TOPIC is correct.
     """
     notify_all(
-        "✅ Test Alert",
-        "If you see this on your phone (Ntfy) and in your inbox (Email), both notification channels are working correctly.",
+        "Test Alert",
+        "If you see this on your phone, Ntfy is working correctly.",
         priority="default",
     )
     return jsonify({"status": "test notification sent", "time": datetime.now(timezone.utc).isoformat()})

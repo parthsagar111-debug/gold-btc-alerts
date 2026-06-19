@@ -1,21 +1,16 @@
 """
-Sends notifications via two free channels:
-  1. Ntfy.sh    - instant push, no signup, just a topic name
-  2. Email      - Gmail SMTP, works even if push notifications fail
+Sends push notifications via Ntfy.sh - free, no signup, no blocked ports.
 
-Both are controlled by environment variables - never hardcode credentials.
+Why not email? Render's free tier blocks outbound SMTP ports (25, 465, 587),
+so Gmail SMTP hangs and times out. Ntfy works over normal HTTPS (port 443),
+which Render does not block - so we use Ntfy only, kept simple.
 """
 
 import os
-import smtplib
 import requests
-from email.mime.text import MIMEText
 
 
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")  # e.g. "parth-gold-alerts-7f3k"
-GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")  # NOT your normal Gmail password
-NOTIFY_EMAIL_TO = os.environ.get("NOTIFY_EMAIL_TO", "")  # where alerts get sent
 
 
 def _ascii_safe(text: str) -> str:
@@ -48,33 +43,11 @@ def send_ntfy(title: str, message: str, priority: str = "default") -> bool:
         return False
 
 
-def send_email(subject: str, body: str) -> bool:
-    """Sends an email via Gmail SMTP using an App Password (not your real password)."""
-    if not (GMAIL_ADDRESS and GMAIL_APP_PASSWORD and NOTIFY_EMAIL_TO):
-        print("[email] Skipped - email env vars not fully set.")
-        return False
-    try:
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = GMAIL_ADDRESS
-        msg["To"] = NOTIFY_EMAIL_TO
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-            server.sendmail(GMAIL_ADDRESS, [NOTIFY_EMAIL_TO], msg.as_string())
-        print("[email] sent")
-        return True
-    except Exception as e:
-        print(f"[email] Error: {e}")
-        return False
-
-
 def notify_all(title: str, message: str, priority: str = "default") -> None:
-    """Fires both channels. If one fails, the other still goes out."""
+    """Single notification channel (Ntfy). Kept as notify_all() so main.py doesn't need changes."""
     send_ntfy(title, message, priority)
-    send_email(title, message)
 
 
 if __name__ == "__main__":
     # Manual test: python notify.py
-    notify_all("Test Alert", "If you see this on your phone and/or inbox, both channels work.")
+    notify_all("Test Alert", "If you see this on your phone, Ntfy is working.")
