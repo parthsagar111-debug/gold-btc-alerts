@@ -48,6 +48,15 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str) -> None:
     try:
         df = fetch_fn()
         df = add_indicators(df)
+
+        # Log the actual fetched price every run, so Render's logs show real
+        # data was retrieved - not just "no error occurred".
+        snap = current_status(df)
+        print(
+            f"[{name}] price=${snap['price']:.2f} candle_time={snap['time']} "
+            f"trend={snap['trend']} rsi={snap['rsi']} macd={snap['macd_state']}"
+        )
+
         signals = get_signals(df, cooldown_hours=8)
 
         if signals.empty:
