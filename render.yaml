@@ -1,0 +1,13 @@
+# Render Cron Job configuration
+# This file documents the settings to enter in Render's dashboard.
+# Render Cron Jobs don't auto-read this file - you paste these values manually
+# when creating the job (instructions in README.md).
+
+# Schedule: run at the top of every hour
+# Cron expression: 0 * * * *
+
+# Build Command:
+# pip install -r requirements.txt
+
+# Start Command:
+# python main.py
