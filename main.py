@@ -119,6 +119,21 @@ def home():
     return jsonify({"status": "alive", "message": "Gold/BTC alert service is running. Hit /run to trigger a check."})
 
 
+@app.route("/test-notify")
+def test_notify_endpoint():
+    """
+    Sends an immediate test notification via both Ntfy and Email,
+    regardless of signals or schedule. Use this to verify your
+    environment variables are correct.
+    """
+    notify_all(
+        "✅ Test Alert",
+        "If you see this on your phone (Ntfy) and in your inbox (Email), both notification channels are working correctly.",
+        priority="default",
+    )
+    return jsonify({"status": "test notification sent", "time": datetime.now(timezone.utc).isoformat()})
+
+
 @app.route("/run")
 def run_endpoint():
     """
