@@ -1,5 +1,10 @@
 """
-Main entry point. Designed to be run once per hour by a scheduler (Render Cron Job).
+Main entry point.
+
+Runs as a tiny free web service on Render (since Render's dedicated Cron Job
+product is paid-only, but Web Services have a real free tier). A free
+external scheduler (cron-job.org) pings this service's /run URL every hour,
+which triggers the actual check-and-alert logic below.
 
 Each run:
   1. Fetches latest Gold + Bitcoin candles
@@ -15,10 +20,13 @@ re-alert on every run for the same unchanged signal.
 import os
 import json
 from datetime import datetime, timezone
+from flask import Flask, jsonify
 
 from data_fetch import fetch_gold_1h, fetch_bitcoin_1h
 from signals import add_indicators, get_signals, current_status
 from notify import notify_all
+
+app = Flask(__name__)
 
 STATE_FILE = "state.json"
 DAILY_STATUS_HOUR = 9  # send a status ping once a day around 9am UTC-ish
@@ -92,7 +100,7 @@ def maybe_send_daily_status(state: dict) -> None:
     state["last_status_date"] = today
 
 
-def main():
+def run_check():
     print(f"=== Run at {datetime.now(timezone.utc).isoformat()} ===")
     state = load_state()
 
@@ -102,7 +110,26 @@ def main():
 
     save_state(state)
     print("=== Run complete ===")
+    return state
+
+
+@app.route("/")
+def home():
+    """Simple landing page so Render's health check sees a 200 OK."""
+    return jsonify({"status": "alive", "message": "Gold/BTC alert service is running. Hit /run to trigger a check."})
+
+
+@app.route("/run")
+def run_endpoint():
+    """
+    This is the URL cron-job.org will ping every hour.
+    Triggers the actual check-and-alert logic and returns a small JSON summary.
+    """
+    state = run_check()
+    return jsonify({"status": "ok", "ran_at": datetime.now(timezone.utc).isoformat(), "state": state})
 
 
 if __name__ == "__main__":
-    main()
+    # Render sets the PORT environment variable - we must listen on it.
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

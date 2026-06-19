@@ -51,15 +51,24 @@ Same flow as PMHunt:
 
 ---
 
-## Step 3 - Deploy on Render as a Cron Job
+## Step 3 - Deploy on Render as a FREE Web Service
+
+**Important:** Render's dedicated "Cron Job" product is paid-only (~$7/month
+minimum as of 2026). Instead, we deploy this as a free **Web Service**, and
+use a free external scheduler (cron-job.org) to "ping" it every hour - this
+is a well-known, completely free workaround.
+
+### 3A - Deploy the Web Service
 
 1. Go to render.com -> sign up/log in with GitHub
-2. New -> Cron Job
+2. New -> **Web Service** (NOT Cron Job)
 3. Connect your `gold-btc-alerts` repo
 4. Settings:
+   - **Region:** Singapore
+   - **Branch:** `main`
    - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `python main.py`
-   - **Schedule:** `0 * * * *`   (runs at the top of every hour)
+   - **Start Command:** `gunicorn main:app`
+   - **Instance Type:** Free
 5. Add Environment Variables (Render dashboard -> Environment tab):
 
    | Key | Value |
@@ -70,7 +79,37 @@ Same flow as PMHunt:
    | GMAIL_APP_PASSWORD | the 16-character app password |
    | NOTIFY_EMAIL_TO | where you want alerts emailed (can be same Gmail) |
 
-6. Deploy. Render will run `main.py` once an hour automatically.
+6. Click **Create Web Service**. Render will give you a URL like:
+   `https://gold-btc-alerts-xxxx.onrender.com`
+
+7. Visit that URL in your browser - you should see:
+   `{"status": "alive", "message": "Gold/BTC alert service is running..."}`
+
+   That confirms the service is deployed and running (for free).
+
+### 3B - Set Up the Free Hourly Trigger (cron-job.org)
+
+Render's free web services don't run on their own schedule - they only act
+when something visits them. So we use a free external pinger:
+
+1. Go to **cron-job.org** -> sign up (free, no card)
+2. Click **Create cronjob**
+3. **Title:** Gold BTC Alert Trigger
+4. **URL:** `https://gold-btc-alerts-xxxx.onrender.com/run`
+   (use YOUR actual Render URL + `/run` at the end)
+5. **Schedule:** Every hour -> select "Every hour" (or custom: minute 0, every hour)
+6. Save
+
+Now cron-job.org will hit your `/run` endpoint every hour, which triggers
+the actual gold/bitcoin check and sends alerts if a signal fires - completely
+free, forever, no card needed anywhere in this chain.
+
+**Note on free tier cold starts:** Render's free web services "sleep" after
+15 minutes of no traffic and take ~30-60 seconds to wake up on the next
+request. This means your hourly check might run a minute or so late
+sometimes - completely fine for an hourly strategy, irrelevant for learning
+purposes.
+
 
 ---
 
