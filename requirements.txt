@@ -1,6 +1,6 @@
-pandas==2.2.2
-pandas-ta==0.3.14b0
+pandas
+pandas-ta==0.4.71b0
 requests==2.32.3
-numpy==1.26.4
+numpy
 flask==3.0.3
 gunicorn==22.0.0
