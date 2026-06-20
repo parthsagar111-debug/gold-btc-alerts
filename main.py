@@ -44,7 +44,7 @@ def save_state(state: dict) -> None:
         json.dump(state, f, default=str)
 
 
-def check_asset(name: str, fetch_fn, state: dict, state_key: str) -> None:
+def check_asset(name: str, fetch_fn, state: dict, state_key: str, rsi_oversold: float = 50, rsi_overbought: float = 50) -> None:
     try:
         df = fetch_fn()
         df = add_indicators(df)
@@ -57,7 +57,7 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str) -> None:
             f"trend={snap['trend']} rsi={snap['rsi']} macd={snap['macd_state']}"
         )
 
-        signals = get_signals(df, cooldown_hours=8)
+        signals = get_signals(df, cooldown_hours=8, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought)
 
         if signals.empty:
             print(f"[{name}] No active signal.")
@@ -81,6 +81,22 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str) -> None:
         notify_all(title, body, priority="high")
         state[state_key] = signal_id
         print(f"[{name}] New signal alerted: {latest['type']} @ {latest['price']:.2f}")
+
+        # Log to the Signal Journal (Google Sheets) for later accuracy tracking.
+        # Wrapped separately so a Sheets hiccup never breaks the actual alert.
+        try:
+            from journal_logger import log_signal_to_journal
+            log_signal_to_journal(
+                asset=name,
+                signal_type=latest["type"],
+                price=latest["price"],
+                rsi=latest["rsi"],
+                ema20=latest["ema20"],
+                ema50=latest["ema50"],
+                macd_state=current_status(df)["macd_state"],
+            )
+        except Exception as journal_error:
+            print(f"[{name}] Journal logging failed (alert still sent OK): {journal_error}")
 
     except Exception as e:
         print(f"[{name}] ERROR: {e}")
@@ -113,8 +129,8 @@ def run_check():
     print(f"=== Run at {datetime.now(timezone.utc).isoformat()} ===")
     state = load_state()
 
-    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal")
-    check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal")
+    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", rsi_oversold=50, rsi_overbought=50)
+    check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", rsi_oversold=30, rsi_overbought=70)
     maybe_send_daily_status(state)
 
     save_state(state)
