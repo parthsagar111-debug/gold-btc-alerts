@@ -45,15 +45,25 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
     return df[["Close"]]
 
 
-def fetch_bitcoin_1h(days: int = 7) -> pd.DataFrame:
+def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
     """
     Fetches recent hourly BTC/USD prices from CoinGecko (free, no API key).
     CoinGecko's market_chart endpoint returns hourly granularity automatically
-    when the range is <= 90 days.
+    when the range is <= 90 days. We use 4 days (~96 candles) - just enough
+    for EMA50 + MACD warmup, to minimize how much data we pull per call and
+    reduce the chance of hitting CoinGecko's free-tier rate limit.
     """
     url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
     params = {"vs_currency": "usd", "days": days}
     resp = requests.get(url, params=params, timeout=15)
+
+    if resp.status_code == 429:
+        raise RuntimeError(
+            "CoinGecko rate limit hit (429). This is usually temporary - "
+            "it resets within a few minutes. If it persists, we're calling "
+            "the API too often (e.g. from repeated manual testing)."
+        )
+
     data = resp.json()
 
     if "prices" not in data:
