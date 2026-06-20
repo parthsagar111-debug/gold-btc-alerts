@@ -2,7 +2,9 @@
 Fetches 1H candle data for Gold (XAU/USD) and Bitcoin (BTC/USD).
 
 Gold    -> Twelve Data API (free tier, needs TWELVE_DATA_API_KEY env var)
-Bitcoin -> CoinGecko API (free, no key needed)
+Bitcoin -> CoinGecko API (free Demo plan, needs COINGECKO_API_KEY env var
+           for a stable 100 calls/min - the old no-key public pool only
+           gives 5-15 calls/min shared globally, which we kept hitting)
 """
 
 import os
@@ -12,6 +14,7 @@ from datetime import datetime, timezone
 
 
 TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "")
+COINGECKO_API_KEY = os.environ.get("COINGECKO_API_KEY", "")
 
 
 def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
@@ -47,21 +50,30 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
 
 def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
     """
-    Fetches recent hourly BTC/USD prices from CoinGecko (free, no API key).
+    Fetches recent hourly BTC/USD prices from CoinGecko.
     CoinGecko's market_chart endpoint returns hourly granularity automatically
     when the range is <= 90 days. We use 4 days (~96 candles) - just enough
-    for EMA50 + MACD warmup, to minimize how much data we pull per call and
-    reduce the chance of hitting CoinGecko's free-tier rate limit.
+    for EMA50 + MACD warmup, to minimize how much data we pull per call.
+
+    Uses the free Demo plan API key (100 calls/min) via the
+    x-cg-demo-api-key header. Falls back to the old no-key public endpoint
+    if COINGECKO_API_KEY isn't set, though that's heavily rate-limited
+    (5-15 calls/min, shared globally) and not recommended.
     """
     url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
     params = {"vs_currency": "usd", "days": days}
-    resp = requests.get(url, params=params, timeout=15)
+    headers = {}
+    if COINGECKO_API_KEY:
+        headers["x-cg-demo-api-key"] = COINGECKO_API_KEY
+
+    resp = requests.get(url, params=params, headers=headers, timeout=15)
 
     if resp.status_code == 429:
         raise RuntimeError(
             "CoinGecko rate limit hit (429). This is usually temporary - "
-            "it resets within a few minutes. If it persists, we're calling "
-            "the API too often (e.g. from repeated manual testing)."
+            "it resets within a few minutes. If it persists and you have "
+            "COINGECKO_API_KEY set, check the key is correct on the "
+            "Developer Dashboard."
         )
 
     data = resp.json()
@@ -78,7 +90,7 @@ def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Quick manual test when run directly: python data_fetch.py
-    print("Testing Bitcoin fetch (no key needed)...")
+    print("Testing Bitcoin fetch...")
     try:
         btc = fetch_bitcoin_1h(days=2)
         print(f"Fetched {len(btc)} BTC candles. Latest: {btc.tail(3)}")
