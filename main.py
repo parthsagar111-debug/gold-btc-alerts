@@ -19,11 +19,12 @@ re-alert on every run for the same unchanged signal.
 
 import os
 import json
+import pandas as pd
 from datetime import datetime, timezone
 from flask import Flask, jsonify
 
 from data_fetch import fetch_gold_1h, fetch_bitcoin_1h
-from signals import add_indicators, get_signals, current_status
+from signals import add_indicators, get_signals, get_signals_recovery, current_status
 from notify import notify_all
 
 app = Flask(__name__)
@@ -44,7 +45,7 @@ def save_state(state: dict) -> None:
         json.dump(state, f, default=str)
 
 
-def check_asset(name: str, fetch_fn, state: dict, state_key: str, rsi_oversold: float = 50, rsi_overbought: float = 50) -> None:
+def check_asset(name: str, fetch_fn, state: dict, state_key: str, signal_fn=get_signals, rsi_oversold: float = 50, rsi_overbought: float = 50) -> None:
     try:
         df = fetch_fn()
         df = add_indicators(df)
@@ -57,7 +58,7 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str, rsi_oversold: 
             f"trend={snap['trend']} rsi={snap['rsi']} macd={snap['macd_state']}"
         )
 
-        signals = get_signals(df, cooldown_hours=8, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought)
+        signals = signal_fn(df, cooldown_hours=8, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought)
 
         if signals.empty:
             print(f"[{name}] No active signal.")
@@ -78,6 +79,21 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str, rsi_oversold: 
             f"Time: {latest['time']}\n\n"
             f"All 3 indicators aligned. Check the chart before acting."
         )
+
+        # For Gold only: add historical seasonality context. Wrapped separately
+        # so a seasonality fetch hiccup never delays or breaks the actual alert.
+        if name == "GOLD":
+            try:
+                from seasonality import fetch_historical_gold, calculate_monthly_seasonality, describe_seasonality, check_alignment
+                hist_df = fetch_historical_gold()
+                summary = calculate_monthly_seasonality(hist_df)
+                current_month = pd.Timestamp(latest["time"]).month
+                seasonality_note = describe_seasonality(current_month, summary)
+                alignment_note = check_alignment(latest["type"], current_month, summary)
+                body += f"\n\n📅 {seasonality_note}\n{alignment_note}"
+            except Exception as seasonality_error:
+                print(f"[{name}] Seasonality enrichment failed (alert still sent OK): {seasonality_error}")
+
         notify_all(title, body, priority="high")
         state[state_key] = signal_id
         print(f"[{name}] New signal alerted: {latest['type']} @ {latest['price']:.2f}")
@@ -129,8 +145,8 @@ def run_check():
     print(f"=== Run at {datetime.now(timezone.utc).isoformat()} ===")
     state = load_state()
 
-    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", rsi_oversold=50, rsi_overbought=50)
-    check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", rsi_oversold=30, rsi_overbought=70)
+    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals, rsi_oversold=50, rsi_overbought=50)
+    check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
     maybe_send_daily_status(state)
 
     save_state(state)
