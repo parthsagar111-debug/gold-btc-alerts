@@ -145,7 +145,7 @@ def run_check():
     print(f"=== Run at {datetime.now(timezone.utc).isoformat()} ===")
     state = load_state()
 
-    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals, rsi_oversold=50, rsi_overbought=50)
+    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
     check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
     maybe_send_daily_status(state)
 
