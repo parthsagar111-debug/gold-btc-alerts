@@ -23,9 +23,10 @@ import pandas as pd
 from datetime import datetime, timezone
 from flask import Flask, jsonify
 
-from data_fetch import fetch_gold_1h, fetch_bitcoin_1h
+from data_fetch import fetch_gold_1h, fetch_bitcoin_1h, fetch_usdinr_1h, fetch_gold_inr_1h
 from signals import add_indicators, get_signals, get_signals_recovery, current_status
 from notify import notify_all
+from cross_asset import get_gold_inr_context
 
 app = Flask(__name__)
 
@@ -37,7 +38,13 @@ def load_state() -> dict:
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r") as f:
             return json.load(f)
-    return {"gold_last_signal": None, "btc_last_signal": None, "last_status_date": None}
+    return {
+        "gold_last_signal": None,
+        "btc_last_signal": None,
+        "usdinr_last_signal": None,
+        "goldinr_last_signal": None,
+        "last_status_date": None,
+    }
 
 
 def save_state(state: dict) -> None:
@@ -45,7 +52,25 @@ def save_state(state: dict) -> None:
         json.dump(state, f, default=str)
 
 
-def check_asset(name: str, fetch_fn, state: dict, state_key: str, signal_fn=get_signals, rsi_oversold: float = 50, rsi_overbought: float = 50) -> None:
+def check_asset(
+    name: str,
+    fetch_fn,
+    state: dict,
+    state_key: str,
+    signal_fn=get_signals,
+    rsi_oversold: float = 50,
+    rsi_overbought: float = 50,
+    custom_labels: dict = None,
+    extra_context_fn=None,
+) -> None:
+    """
+    custom_labels: optional dict like {"BUY": "RUPEE WEAKENING", "SELL": "RUPEE STRENGTHENING"}
+        to override the generic BUY/SELL wording in the notification title -
+        useful for currency pairs where "BUY" is ambiguous about direction.
+    extra_context_fn: optional function(state) -> str, called to add extra
+        context to the notification body (used for Gold-INR's cross-asset
+        context). Takes state so it can check other assets' recent signals.
+    """
     try:
         df = fetch_fn()
         df = add_indicators(df)
@@ -71,10 +96,11 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str, signal_fn=get_
             print(f"[{name}] Latest signal already alerted. Skipping.")
             return
 
+        display_label = (custom_labels or {}).get(latest["type"], latest["type"])
         icon = "🟢" if latest["type"] == "BUY" else "🔴"
-        title = f"{icon} {name} {latest['type']} signal"
+        title = f"{icon} {name} {display_label} signal"
         body = (
-            f"{name} {latest['type']} @ ${latest['price']:.2f}\n"
+            f"{name} {display_label} @ {latest['price']:.2f}\n"
             f"RSI: {latest['rsi']} | EMA20: {latest['ema20']} | EMA50: {latest['ema50']}\n"
             f"Time: {latest['time']}\n\n"
             f"All 3 indicators aligned. Check the chart before acting."
@@ -93,6 +119,15 @@ def check_asset(name: str, fetch_fn, state: dict, state_key: str, signal_fn=get_
                 body += f"\n\n📅 {seasonality_note}\n{alignment_note}"
             except Exception as seasonality_error:
                 print(f"[{name}] Seasonality enrichment failed (alert still sent OK): {seasonality_error}")
+
+        # Optional cross-asset context (used by Gold-INR to explain WHY the
+        # move happened - gold itself, the currency, or India-specific).
+        if extra_context_fn is not None:
+            try:
+                context_note = extra_context_fn(state)
+                body += f"\n\n📊 {context_note}"
+            except Exception as context_error:
+                print(f"[{name}] Cross-asset context failed (alert still sent OK): {context_error}")
 
         notify_all(title, body, priority="high")
         state[state_key] = signal_id
@@ -147,6 +182,26 @@ def run_check():
 
     check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
     check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
+    check_asset(
+        "USD/INR",
+        fetch_usdinr_1h,
+        state,
+        "usdinr_last_signal",
+        signal_fn=get_signals_recovery,
+        rsi_oversold=30,
+        rsi_overbought=70,
+        custom_labels={"BUY": "RUPEE WEAKENING", "SELL": "RUPEE STRENGTHENING"},
+    )
+    check_asset(
+        "GOLD-INR",
+        fetch_gold_inr_1h,
+        state,
+        "goldinr_last_signal",
+        signal_fn=get_signals_recovery,
+        rsi_oversold=30,
+        rsi_overbought=70,
+        extra_context_fn=get_gold_inr_context,
+    )
     maybe_send_daily_status(state)
 
     save_state(state)

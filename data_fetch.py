@@ -88,6 +88,71 @@ def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
     return df[["Close"]]
 
 
+def fetch_usdinr_1h(outputsize: int = 150) -> pd.DataFrame:
+    """
+    Fetches recent 1H USD/INR candles from Twelve Data.
+    Same API, same key as Gold USD - Twelve Data supports 140 currencies
+    including INR, with forex data available 24/7 (no weekend gaps).
+    """
+    if not TWELVE_DATA_API_KEY:
+        raise RuntimeError(
+            "TWELVE_DATA_API_KEY environment variable not set. "
+            "Set it in Render's Environment tab, never hardcode it."
+        )
+
+    url = "https://api.twelvedata.com/time_series"
+    params = {
+        "symbol": "USD/INR",
+        "interval": "1h",
+        "outputsize": outputsize,
+        "apikey": TWELVE_DATA_API_KEY,
+    }
+    resp = requests.get(url, params=params, timeout=15)
+    data = resp.json()
+
+    if "values" not in data:
+        raise RuntimeError(f"Twelve Data error (USD/INR): {data}")
+
+    df = pd.DataFrame(data["values"])
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    df = df.set_index("datetime").sort_index()
+    df["Close"] = df["close"].astype(float)
+    return df[["Close"]]
+
+
+def fetch_gold_inr_1h(outputsize: int = 150) -> pd.DataFrame:
+    """
+    Fetches recent 1H Gold-in-INR candles from Twelve Data.
+    Uses the symbol format Twelve Data documents for cross-rate calculation
+    (e.g. XAU/INR), which computes Gold-in-Rupees on the fly from the
+    underlying XAU/USD and USD/INR rates - no separate data source needed.
+    """
+    if not TWELVE_DATA_API_KEY:
+        raise RuntimeError(
+            "TWELVE_DATA_API_KEY environment variable not set. "
+            "Set it in Render's Environment tab, never hardcode it."
+        )
+
+    url = "https://api.twelvedata.com/time_series"
+    params = {
+        "symbol": "XAU/INR",
+        "interval": "1h",
+        "outputsize": outputsize,
+        "apikey": TWELVE_DATA_API_KEY,
+    }
+    resp = requests.get(url, params=params, timeout=15)
+    data = resp.json()
+
+    if "values" not in data:
+        raise RuntimeError(f"Twelve Data error (XAU/INR): {data}")
+
+    df = pd.DataFrame(data["values"])
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    df = df.set_index("datetime").sort_index()
+    df["Close"] = df["close"].astype(float)
+    return df[["Close"]]
+
+
 if __name__ == "__main__":
     # Quick manual test when run directly: python data_fetch.py
     print("Testing Bitcoin fetch...")
@@ -103,3 +168,17 @@ if __name__ == "__main__":
         print(f"Fetched {len(gold)} Gold candles. Latest: {gold.tail(3)}")
     except Exception as e:
         print(f"Gold fetch failed: {e}")
+
+    print("\nTesting USD/INR fetch...")
+    try:
+        usdinr = fetch_usdinr_1h(outputsize=10)
+        print(f"Fetched {len(usdinr)} USD/INR candles. Latest: {usdinr.tail(3)}")
+    except Exception as e:
+        print(f"USD/INR fetch failed: {e}")
+
+    print("\nTesting Gold-INR (XAU/INR) fetch...")
+    try:
+        gold_inr = fetch_gold_inr_1h(outputsize=10)
+        print(f"Fetched {len(gold_inr)} Gold-INR candles. Latest: {gold_inr.tail(3)}")
+    except Exception as e:
+        print(f"Gold-INR fetch failed: {e}")
