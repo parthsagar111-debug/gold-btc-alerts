@@ -99,11 +99,40 @@ def check_asset(
         display_label = (custom_labels or {}).get(latest["type"], latest["type"])
         icon = "🟢" if latest["type"] == "BUY" else "🔴"
         title = f"{icon} {name} {display_label} signal"
+
+        # Compare the price NOW (snap, fetched at the top of this function)
+        # against the price WHEN the signal triggered (latest, could be hours
+        # earlier). This distinction was a source of real confusion - people
+        # were reading the signal price as "the price to act at right now",
+        # not realizing it's when the setup first formed, possibly hours ago.
+        current_price = snap["price"]
+        signal_price = latest["price"]
+        pct_change = (current_price - signal_price) / signal_price * 100
+        hours_ago = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(latest["time"]).tz_localize("UTC")).total_seconds() / 3600
+
+        # Favorable direction depends on signal type: a BUY wants price to have
+        # RISEN since the signal (so current REQUIRES SUBSEQUENT favorable
+        # confirmation), a SELL wants price to have FALLEN. If it moved the
+        # opposite way, the original thesis may already be weakening.
+        if latest["type"] == "BUY":
+            moved_favorably = pct_change > 0
+        else:
+            moved_favorably = pct_change < 0
+
+        direction_word = "risen" if pct_change > 0 else ("fallen" if pct_change < 0 else "stayed flat")
+        favorable_note = (
+            "Price has moved WITH this signal since it triggered - the setup is still tracking as expected."
+            if moved_favorably
+            else "Price has moved AGAINST this signal since it triggered - the original setup may be weakening. "
+                 "Check current indicators (not just this alert) before acting."
+        )
+
         body = (
-            f"{name} {display_label} @ {latest['price']:.2f}\n"
-            f"RSI: {latest['rsi']} | EMA20: {latest['ema20']} | EMA50: {latest['ema50']}\n"
-            f"Time: {latest['time']}\n\n"
-            f"All 3 indicators aligned. Check the chart before acting."
+            f"{name} {display_label}\n"
+            f"Signal triggered @ {signal_price:.2f} ({hours_ago:.1f}h ago)\n"
+            f"Current price: {current_price:.2f} ({direction_word} {abs(pct_change):.1f}% since signal)\n"
+            f"RSI: {latest['rsi']} | EMA20: {latest['ema20']} | EMA50: {latest['ema50']}\n\n"
+            f"{favorable_note}"
         )
 
         # For Gold only: add historical seasonality context. Wrapped separately
