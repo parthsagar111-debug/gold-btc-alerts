@@ -122,35 +122,31 @@ def fetch_usdinr_1h(outputsize: int = 150) -> pd.DataFrame:
 
 def fetch_gold_inr_1h(outputsize: int = 150) -> pd.DataFrame:
     """
-    Fetches recent 1H Gold-in-INR candles from Twelve Data.
-    Uses the symbol format Twelve Data documents for cross-rate calculation
-    (e.g. XAU/INR), which computes Gold-in-Rupees on the fly from the
-    underlying XAU/USD and USD/INR rates - no separate data source needed.
+    Calculates Gold-in-INR by combining Gold-USD and USD/INR, rather than
+    requesting a direct XAU/INR symbol from Twelve Data - that symbol
+    returned a 404 ("symbol or figi parameter is missing or invalid") when
+    tested live, so it's not supported in this exact format. Multiplying
+    the two pairs we already know work is more robust anyway, since it
+    doesn't depend on Twelve Data having a pre-built cross-rate for this
+    specific pair.
+
+    Aligns the two series on their nearest matching hourly timestamps
+    before multiplying, since Gold-USD and USD/INR candles won't always
+    have identically-timed bars.
     """
-    if not TWELVE_DATA_API_KEY:
-        raise RuntimeError(
-            "TWELVE_DATA_API_KEY environment variable not set. "
-            "Set it in Render's Environment tab, never hardcode it."
-        )
+    gold_usd = fetch_gold_1h(outputsize=outputsize)
+    usd_inr = fetch_usdinr_1h(outputsize=outputsize)
 
-    url = "https://api.twelvedata.com/time_series"
-    params = {
-        "symbol": "XAU/INR",
-        "interval": "1h",
-        "outputsize": outputsize,
-        "apikey": TWELVE_DATA_API_KEY,
-    }
-    resp = requests.get(url, params=params, timeout=15)
-    data = resp.json()
-
-    if "values" not in data:
-        raise RuntimeError(f"Twelve Data error (XAU/INR): {data}")
-
-    df = pd.DataFrame(data["values"])
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.set_index("datetime").sort_index()
-    df["Close"] = df["close"].astype(float)
-    return df[["Close"]]
+    combined = pd.merge_asof(
+        gold_usd.sort_index().reset_index(),
+        usd_inr.sort_index().reset_index(),
+        on="datetime",
+        direction="nearest",
+        suffixes=("_gold", "_usdinr"),
+    )
+    combined["Close"] = combined["Close_gold"] * combined["Close_usdinr"]
+    combined = combined.set_index("datetime")[["Close"]]
+    return combined
 
 
 if __name__ == "__main__":
