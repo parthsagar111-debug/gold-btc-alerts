@@ -19,7 +19,10 @@ COINGECKO_API_KEY = os.environ.get("COINGECKO_API_KEY", "")
 
 def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
     """
-    Fetches recent 1H XAU/USD candles from Twelve Data.
+    Fetches recent 1H XAU/USD candles from Twelve Data, including full OHLC
+    (not just Close) - needed for Level 3 candlestick pattern detection,
+    which depends on candle shape (open/high/low/close relationships), not
+    just the closing price.
     outputsize=150 gives enough history for EMA50 + MACD warmup.
     """
     if not TWELVE_DATA_API_KEY:
@@ -44,23 +47,27 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
     df = pd.DataFrame(data["values"])
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.set_index("datetime").sort_index()
-    df["Close"] = df["close"].astype(float)
-    return df[["Close"]]
+    for col in ["open", "high", "low", "close"]:
+        df[col] = df[col].astype(float)
+    df = df.rename(columns={"open": "Open", "high": "High", "low": "Low", "close": "Close"})
+    return df[["Open", "High", "Low", "Close"]]
 
 
 def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
     """
-    Fetches recent hourly BTC/USD prices from CoinGecko.
-    CoinGecko's market_chart endpoint returns hourly granularity automatically
-    when the range is <= 90 days. We use 4 days (~96 candles) - just enough
-    for EMA50 + MACD warmup, to minimize how much data we pull per call.
+    Fetches recent BTC/USD OHLC candles from CoinGecko's dedicated /ohlc
+    endpoint (not /market_chart, which only returns Close-equivalent price
+    points with no Open/High/Low - insufficient for Level 3 candlestick
+    pattern detection). Granularity on the free Demo plan is automatically
+    determined by the date range, not user-specified - for a few days of
+    history this returns finer-grained candles suitable for our indicators.
 
     Uses the free Demo plan API key (100 calls/min) via the
     x-cg-demo-api-key header. Falls back to the old no-key public endpoint
     if COINGECKO_API_KEY isn't set, though that's heavily rate-limited
     (5-15 calls/min, shared globally) and not recommended.
     """
-    url = "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
+    url = "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc"
     params = {"vs_currency": "usd", "days": days}
     headers = {}
     if COINGECKO_API_KEY:
@@ -78,75 +85,14 @@ def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
 
     data = resp.json()
 
-    if "prices" not in data:
+    if not isinstance(data, list):
         raise RuntimeError(f"CoinGecko error: {data}")
 
-    rows = data["prices"]  # list of [timestamp_ms, price]
-    df = pd.DataFrame(rows, columns=["timestamp", "Close"])
+    # Each row: [timestamp_ms, open, high, low, close]
+    df = pd.DataFrame(data, columns=["timestamp", "Open", "High", "Low", "Close"])
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df = df.set_index("datetime").sort_index()
-    return df[["Close"]]
-
-
-def fetch_usdinr_1h(outputsize: int = 150) -> pd.DataFrame:
-    """
-    Fetches recent 1H USD/INR candles from Twelve Data.
-    Same API, same key as Gold USD - Twelve Data supports 140 currencies
-    including INR, with forex data available 24/7 (no weekend gaps).
-    """
-    if not TWELVE_DATA_API_KEY:
-        raise RuntimeError(
-            "TWELVE_DATA_API_KEY environment variable not set. "
-            "Set it in Render's Environment tab, never hardcode it."
-        )
-
-    url = "https://api.twelvedata.com/time_series"
-    params = {
-        "symbol": "USD/INR",
-        "interval": "1h",
-        "outputsize": outputsize,
-        "apikey": TWELVE_DATA_API_KEY,
-    }
-    resp = requests.get(url, params=params, timeout=15)
-    data = resp.json()
-
-    if "values" not in data:
-        raise RuntimeError(f"Twelve Data error (USD/INR): {data}")
-
-    df = pd.DataFrame(data["values"])
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.set_index("datetime").sort_index()
-    df["Close"] = df["close"].astype(float)
-    return df[["Close"]]
-
-
-def fetch_gold_inr_1h(outputsize: int = 150) -> pd.DataFrame:
-    """
-    Calculates Gold-in-INR by combining Gold-USD and USD/INR, rather than
-    requesting a direct XAU/INR symbol from Twelve Data - that symbol
-    returned a 404 ("symbol or figi parameter is missing or invalid") when
-    tested live, so it's not supported in this exact format. Multiplying
-    the two pairs we already know work is more robust anyway, since it
-    doesn't depend on Twelve Data having a pre-built cross-rate for this
-    specific pair.
-
-    Aligns the two series on their nearest matching hourly timestamps
-    before multiplying, since Gold-USD and USD/INR candles won't always
-    have identically-timed bars.
-    """
-    gold_usd = fetch_gold_1h(outputsize=outputsize)
-    usd_inr = fetch_usdinr_1h(outputsize=outputsize)
-
-    combined = pd.merge_asof(
-        gold_usd.sort_index().reset_index(),
-        usd_inr.sort_index().reset_index(),
-        on="datetime",
-        direction="nearest",
-        suffixes=("_gold", "_usdinr"),
-    )
-    combined["Close"] = combined["Close_gold"] * combined["Close_usdinr"]
-    combined = combined.set_index("datetime")[["Close"]]
-    return combined
+    return df[["Open", "High", "Low", "Close"]]
 
 
 if __name__ == "__main__":
@@ -164,17 +110,3 @@ if __name__ == "__main__":
         print(f"Fetched {len(gold)} Gold candles. Latest: {gold.tail(3)}")
     except Exception as e:
         print(f"Gold fetch failed: {e}")
-
-    print("\nTesting USD/INR fetch...")
-    try:
-        usdinr = fetch_usdinr_1h(outputsize=10)
-        print(f"Fetched {len(usdinr)} USD/INR candles. Latest: {usdinr.tail(3)}")
-    except Exception as e:
-        print(f"USD/INR fetch failed: {e}")
-
-    print("\nTesting Gold-INR (XAU/INR) fetch...")
-    try:
-        gold_inr = fetch_gold_inr_1h(outputsize=10)
-        print(f"Fetched {len(gold_inr)} Gold-INR candles. Latest: {gold_inr.tail(3)}")
-    except Exception as e:
-        print(f"Gold-INR fetch failed: {e}")
