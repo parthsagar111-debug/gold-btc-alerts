@@ -97,7 +97,12 @@ def check_asset(
         current_price = snap["price"]
         signal_price = latest["price"]
         pct_change = (current_price - signal_price) / signal_price * 100
-        hours_ago = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(latest["time"]).tz_localize("UTC")).total_seconds() / 3600
+        signal_time = pd.Timestamp(latest["time"])
+        if signal_time.tzinfo is None:
+            signal_time = signal_time.tz_localize("UTC")
+        else:
+            signal_time = signal_time.tz_convert("UTC")
+        hours_ago = (pd.Timestamp.now(tz="UTC") - signal_time).total_seconds() / 3600
 
         # Favorable direction depends on signal type: a BUY wants price to have
         # RISEN since the signal (so current REQUIRES SUBSEQUENT favorable
