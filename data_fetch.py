@@ -53,14 +53,21 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
     return df[["Open", "High", "Low", "Close"]]
 
 
-def fetch_bitcoin_1h(days: int = 4) -> pd.DataFrame:
+def fetch_bitcoin_1h(days: int = 30) -> pd.DataFrame:
     """
     Fetches recent BTC/USD OHLC candles from CoinGecko's dedicated /ohlc
     endpoint (not /market_chart, which only returns Close-equivalent price
     points with no Open/High/Low - insufficient for Level 3 candlestick
-    pattern detection). Granularity on the free Demo plan is automatically
-    determined by the date range, not user-specified - for a few days of
-    history this returns finer-grained candles suitable for our indicators.
+    pattern detection).
+
+    IMPORTANT: the /ohlc endpoint's `days` parameter only accepts specific
+    values: 1, 7, 14, 30, 90, 180, 365, or "max" - NOT arbitrary integers.
+    Passing days=4 (as an earlier version of this code did) returns an
+    "Invalid days parameter" error. Granularity is automatic based on the
+    days value: 1-2 days -> 30 min candles, 3-30 days -> 4 hour candles,
+    31+ days -> 4 day candles. We use days=30 (the largest value that still
+    gives 4-hour granularity) to get ~180 candles, comfortably covering our
+    150-candle requirement for EMA50 + MACD warmup.
 
     Uses the free Demo plan API key (100 calls/min) via the
     x-cg-demo-api-key header. Falls back to the old no-key public endpoint
