@@ -18,31 +18,33 @@ unknown.
 """
 
 import pandas as pd
-import pandas_ta as ta
 import numpy as np
 
 
 def add_bollinger_bands(df: pd.DataFrame, length: int = 20, std: float = 2.0) -> pd.DataFrame:
     """
     Adds Bollinger Band columns (lower, middle, upper, bandwidth, %B) to the
-    dataframe. If there isn't enough data for the rolling window (pandas_ta
-    returns None in that case rather than a DataFrame of NaNs), the new
-    columns are filled with NaN instead of crashing.
+    dataframe.
+
+    Implemented directly in pandas rather than via pandas_ta.bbands(), which
+    triggers numba/llvmlite JIT compilation on its first call in a process -
+    measured at ~0.3s in this sandbox, but almost certainly the root cause of
+    a real WORKER TIMEOUT crash on Render's free tier, where weaker shared
+    CPU likely makes that one-time compilation cost much worse. The formula
+    here is mathematically identical to pandas_ta's; the only difference is
+    avoiding the numba dependency for this specific calculation.
     """
     df = df.copy()
-    bbands = ta.bbands(df["Close"], length=length, std=std)
+    middle = df["Close"].rolling(window=length).mean()
+    rolling_std = df["Close"].rolling(window=length).std()
+    upper = middle + std * rolling_std
+    lower = middle - std * rolling_std
 
-    col_names = ["BB_lower", "BB_middle", "BB_upper", "BB_bandwidth", "BB_percent"]
-    if bbands is None:
-        for col in col_names:
-            df[col] = float("nan")
-        return df
-
-    df["BB_lower"] = bbands[f"BBL_{length}_{std}_{std}"]
-    df["BB_middle"] = bbands[f"BBM_{length}_{std}_{std}"]
-    df["BB_upper"] = bbands[f"BBU_{length}_{std}_{std}"]
-    df["BB_bandwidth"] = bbands[f"BBB_{length}_{std}_{std}"]  # band width as % of middle band
-    df["BB_percent"] = bbands[f"BBP_{length}_{std}_{std}"]  # where price sits within the bands, 0-1
+    df["BB_lower"] = lower
+    df["BB_middle"] = middle
+    df["BB_upper"] = upper
+    df["BB_bandwidth"] = (upper - lower) / middle * 100  # band width as % of middle band
+    df["BB_percent"] = (df["Close"] - lower) / (upper - lower)  # where price sits within the bands, 0-1
     return df
 
 

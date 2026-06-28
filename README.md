@@ -77,7 +77,7 @@ financial advice.
    - **Region:** Singapore (closest to India)
    - **Branch:** `main`
    - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `gunicorn main:app`
+   - **Start Command:** `gunicorn main:app --timeout 120`
    - **Instance Type:** Free
 5. Add Environment Variables (Render dashboard -> Environment tab):
 
