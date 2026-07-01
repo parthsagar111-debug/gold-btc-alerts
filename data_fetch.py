@@ -24,6 +24,15 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
     which depends on candle shape (open/high/low/close relationships), not
     just the closing price.
     outputsize=150 gives enough history for EMA50 + MACD warmup.
+
+    IMPORTANT: Twelve Data returns timestamps in America/New_York (EDT,
+    UTC-04:00) by default, NOT UTC. We were previously parsing these as
+    naive timestamps and then labeling them "UTC" elsewhere in the code -
+    a 4-hour mislabeling that caused negative "hours ago" values in
+    notifications (current time appeared to be BEFORE the signal time).
+    We now explicitly request timezone=UTC from the API so the returned
+    timestamps are genuinely UTC, matching what the rest of the code
+    assumes.
     """
     if not TWELVE_DATA_API_KEY:
         raise RuntimeError(
@@ -37,6 +46,7 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
         "interval": "1h",
         "outputsize": outputsize,
         "apikey": TWELVE_DATA_API_KEY,
+        "timezone": "UTC",
     }
     resp = requests.get(url, params=params, timeout=15)
     data = resp.json()
@@ -45,7 +55,7 @@ def fetch_gold_1h(outputsize: int = 150) -> pd.DataFrame:
         raise RuntimeError(f"Twelve Data error: {data}")
 
     df = pd.DataFrame(data["values"])
-    df["datetime"] = pd.to_datetime(df["datetime"])
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
     df = df.set_index("datetime").sort_index()
     for col in ["open", "high", "low", "close"]:
         df[col] = df[col].astype(float)
