@@ -21,7 +21,7 @@ All times are stored and compared in UTC.
 """
 
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 
 # Hours before/after an event during which signals are considered
 # contaminated by event risk.
@@ -73,10 +73,33 @@ def _first_friday(year: int, month: int) -> datetime:
     return d
 
 
+def _nth_sunday(year: int, month: int, n: int) -> date:
+    """The n-th Sunday of a given month."""
+    d = date(year, month, 1)
+    d += timedelta(days=(6 - d.weekday()) % 7)  # 6 = Sunday
+    return d + timedelta(weeks=n - 1)
+
+
+def _us_eastern_utc_offset_hours(day: date) -> int:
+    """
+    UTC offset of US Eastern time on `day`, for releases at 08:30 local.
+
+    US DST (since 2007) runs from the second Sunday of March to the first
+    Sunday of November, switching at 02:00 local - so by 08:30 on either
+    transition day the new offset already applies, and a date comparison
+    is exact. Hand-rolled rather than zoneinfo because zoneinfo needs the
+    `tzdata` package on Windows.
+    """
+    dst_start = _nth_sunday(day.year, 3, 2)
+    dst_end = _nth_sunday(day.year, 11, 1)
+    return -4 if dst_start <= day < dst_end else -5
+
+
 def _nfp_datetimes(around: datetime) -> list:
     """
     NFP release datetimes for the month of `around` and its neighbours,
-    at 12:30 UTC (08:30 ET). Covers month boundaries.
+    at 08:30 US Eastern converted to UTC (12:30 UTC under EDT, 13:30 UTC
+    under EST). Covers month boundaries.
     """
     out = []
     for offset in (-1, 0, 1):
@@ -87,7 +110,8 @@ def _nfp_datetimes(around: datetime) -> list:
         elif month > 12:
             month, year = 1, year + 1
         friday = _first_friday(year, month)
-        out.append(friday.replace(hour=12, minute=30))
+        utc_hour = 8 - _us_eastern_utc_offset_hours(friday.date())
+        out.append(friday.replace(hour=utc_hour, minute=30))
     return out
 
 
