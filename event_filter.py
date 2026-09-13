@@ -40,8 +40,28 @@ SUPPRESS_IN_WINDOW = True
 #          bls.gov/schedule/news_release/cpi.htm
 # ---------------------------------------------------------------------
 KNOWN_EVENTS = [
-    # ("2026-01-28 19:00", "FOMC"),
-    # ("2026-01-13 13:30", "CPI"),
+    # UTC offset follows US daylight saving: 18:00 / 12:30 UTC while EDT
+    # applies, 19:00 / 13:30 UTC under EST (2026: EDT Mar 8 - Nov 1;
+    # 2027: EDT Mar 14 - Nov 7).
+    # Populated 2026-09-13. BLS had not yet published its 2027 schedule,
+    # so CPI entries stop at Dec 2026 - add 2027 CPI once bls.gov lists it.
+    # FOMC 2027 dates are tentative until confirmed at the preceding meeting.
+
+    # FOMC statement days (second day of each meeting)
+    ("2026-09-16 18:00", "FOMC"),
+    ("2026-10-28 18:00", "FOMC"),
+    ("2026-12-09 19:00", "FOMC"),
+    ("2027-01-27 19:00", "FOMC"),
+    ("2027-03-17 18:00", "FOMC"),
+    ("2027-04-28 18:00", "FOMC"),
+    ("2027-06-09 18:00", "FOMC"),
+    ("2027-07-28 18:00", "FOMC"),
+    ("2027-09-15 18:00", "FOMC"),
+
+    # CPI releases (reference month in comment)
+    ("2026-10-14 12:30", "CPI"),  # Sep 2026
+    ("2026-11-10 13:30", "CPI"),  # Oct 2026
+    ("2026-12-10 13:30", "CPI"),  # Nov 2026
 ]
 
 
