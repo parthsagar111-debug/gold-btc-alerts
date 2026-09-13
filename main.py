@@ -13,12 +13,12 @@ Each run:
   4. If yes -> sends a push notification via Ntfy
   5. Also sends one daily status ping at a fixed hour, even with no new signal
 
-State (last signal seen) is persisted to a small JSON file so we don't
-re-alert on every run for the same unchanged signal.
+State (last signal seen) is persisted to the Google Sheet, with a local
+JSON file as fallback, so we don't re-alert on every run for the same
+unchanged signal. See state_store.py.
 """
 
 import os
-import json
 import pandas as pd
 from datetime import datetime, timezone
 from flask import Flask, jsonify
@@ -31,10 +31,10 @@ from level3_analysis import describe_level3_context
 from risk_analysis import build_trade_plan, describe_trade_plan
 from event_filter import get_active_event, describe_event_risk, SUPPRESS_IN_WINDOW
 from macro_context import describe_macro_context
+from state_store import load_state, save_state
 
 app = Flask(__name__)
 
-STATE_FILE = "state.json"
 DAILY_STATUS_HOUR = 9  # send a status ping once a day around 9am UTC-ish
 
 # Staleness threshold for notifications. A genuinely fresh signal is at most
@@ -46,22 +46,6 @@ DAILY_STATUS_HOUR = 9  # send a status ping once a day around 9am UTC-ish
 # persists in the fetch window and would otherwise re-alert it as "new".
 # Stale signals are recorded in state silently instead of notifying.
 MAX_SIGNAL_AGE_HOURS = 12
-
-
-def load_state() -> dict:
-    if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    return {
-        "gold_last_signal": None,
-        "btc_last_signal": None,
-        "last_status_date": None,
-    }
-
-
-def save_state(state: dict) -> None:
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, default=str)
 
 
 def check_asset(

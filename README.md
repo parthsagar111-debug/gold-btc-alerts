@@ -112,9 +112,10 @@ python seasonality.py   # verify the historical gold dataset
 
 - Bitcoin runs on 4-hour candles (CoinGecko's OHLC endpoint decides
   granularity), so it signals roughly a third as often as gold.
-- `state.json` lives on Render's ephemeral disk and is wiped on restart.
-  The staleness filter handles the fallout; moving state to Sheets is the
-  proper fix.
+- Dedup state lives in a `state` tab of the journal's Google Sheet, so it
+  survives Render restarts. Without Sheets credentials it falls back to
+  `state.json` on Render's ephemeral disk, and the 12-hour staleness filter
+  handles the fallout of a wipe.
 
 See `CLAUDE.md` for architecture, the full list of known pitfalls, and the
 roadmap.

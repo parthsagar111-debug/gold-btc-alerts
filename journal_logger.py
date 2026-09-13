@@ -42,8 +42,17 @@ HEADER_ROW = [
 ]
 
 
-def _get_worksheet():
-    """Opens the first worksheet, creating the header row if the sheet is empty."""
+# Per-request timeout for Sheets API calls. gspread has none by default, and
+# a hung request would run into gunicorn's 120s worker timeout and SIGKILL
+# the whole run - the opposite of failing soft.
+SHEETS_TIMEOUT_SECONDS = 15
+
+
+def open_spreadsheet():
+    """
+    Authorised gspread Spreadsheet for GOOGLE_SHEETS_ID. Shared by the
+    journal (first worksheet) and state_store.py (the "state" worksheet).
+    """
     import gspread
     from google.oauth2.service_account import Credentials
 
@@ -57,7 +66,14 @@ def _get_worksheet():
         json.loads(GOOGLE_SERVICE_ACCOUNT),
         scopes=["https://www.googleapis.com/auth/spreadsheets"],
     )
-    sheet = gspread.authorize(creds).open_by_key(GOOGLE_SHEETS_ID).sheet1
+    client = gspread.authorize(creds)
+    client.http_client.set_timeout(SHEETS_TIMEOUT_SECONDS)
+    return client.open_by_key(GOOGLE_SHEETS_ID)
+
+
+def _get_worksheet():
+    """Opens the first worksheet, creating the header row if the sheet is empty."""
+    sheet = open_spreadsheet().sheet1
 
     if not sheet.get_all_values():
         sheet.append_row(HEADER_ROW)

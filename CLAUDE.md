@@ -54,7 +54,8 @@ cron-job.org  --hourly-->  Render (Flask) /run
 | `event_filter.py` | FOMC/CPI/NFP window suppression |
 | `macro_context.py` | DXY + rolling gold/DXY correlation |
 | `seasonality.py` | 65yr monthly gold seasonality (gold only) |
-| `journal_logger.py` | Appends signals to Google Sheets |
+| `journal_logger.py` | Appends signals to Google Sheets; shared `open_spreadsheet()` |
+| `state_store.py` | Dedup state in the Sheet's `state` tab, `state.json` fallback |
 
 ---
 
@@ -146,8 +147,9 @@ This is expected, not a bug.
 **Render free tier has an ephemeral filesystem.** `state.json` is wiped by
 deploys, Render's documented "may restart at any time" behaviour,
 spin-down/up cycles, and OOM kills. This caused repeated duplicate alerts.
-The staleness gate is the current mitigation; **moving state to Google
-Sheets is the real fix and is still open** (see Roadmap).
+**Fixed:** state now lives in the `state` worksheet of the journal
+spreadsheet (`state_store.py`), with `state.json` as a fail-soft fallback.
+The staleness gate stays as a backstop for runs where Sheets is down.
 
 **TA-Lib is not installable here.** `pandas_ta.cdl_pattern()` requires it.
 All candlestick patterns in `level3_analysis.py` are hand-implemented.
@@ -251,11 +253,10 @@ standard should hold:
    `expectancy = (win_rate × avg_win_R) − (loss_rate × avg_loss_R)`, and
    check whether Level 2/3 confluence actually improves outcomes. If
    expectancy is negative, adding layers makes it lose faster.
-2. **Populate `KNOWN_EVENTS`** in `event_filter.py` with real FOMC and CPI
-   dates from federalreserve.gov and bls.gov. NFP is already computed
-   algorithmically. The list is currently empty, so only NFP is filtered.
-3. **Move state to Google Sheets**, reusing the journal's credentials. This
-   kills the duplicate-alert class of bug at the root.
+2. ~~**Populate `KNOWN_EVENTS`**~~ — done 2026-09-13: FOMC through Sep 2027,
+   CPI through Dec 2026. **Add 2027 CPI dates** once bls.gov publishes its
+   2027 schedule (not yet out at time of writing).
+3. ~~**Move state to Google Sheets**~~ — done 2026-09-13 (`state_store.py`).
 4. **Outcome auto-fill** — a follow-up job that re-checks price at fixed
    horizons and fills `outcome` / `r_multiple`.
 5. **Session awareness** — signals in thin Asian hours are lower quality.
