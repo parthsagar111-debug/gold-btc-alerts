@@ -94,12 +94,19 @@ alerts still send.
 
 ## Measuring whether it works
 
-Only Level 1 fires signals, and its edge has never been measured. Two ways
-to find out:
+Only Level 1 fires signals, and its edge has never been measured. Easiest
+way to find out is to open this on the deployed app:
+
+```
+https://<your-app>.onrender.com/backtest
+https://<your-app>.onrender.com/backtest?candles=2000
+```
+
+It runs where the dependencies and API key already are. Takes a few
+seconds. The same harness runs locally if you want the per-trade CSV:
 
 ```bash
-python backtest.py                 # replay history through the live rule
-python backtest.py --candles 2000
+python backtest.py --candles 2000   # writes backtest_results.csv
 ```
 
 Prints hit rate and expectancy in R, split by whether Level 2/3 confluence

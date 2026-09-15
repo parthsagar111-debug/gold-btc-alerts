@@ -21,7 +21,7 @@ unchanged signal. See state_store.py.
 import os
 import pandas as pd
 from datetime import datetime, timezone
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 from data_fetch import fetch_gold_1h, fetch_bitcoin_1h
 from signals import add_indicators, get_signals, get_signals_recovery, current_status
@@ -313,6 +313,56 @@ def test_notify_endpoint():
         priority="default",
     )
     return jsonify({"status": "test notification sent", "time": datetime.now(timezone.utc).isoformat()})
+
+
+@app.route("/backtest")
+def backtest_endpoint():
+    """
+    Runs the backtest on Render, where pandas_ta and the API key already
+    exist - no local install needed. Open in a browser.
+
+    Query params:
+        ?candles=5000   how much history to replay (default 5000)
+        ?max_hold=48    candles before marking a trade to market
+
+    Measured at ~3s for 5000 candles on free-tier CPU, comfortably inside
+    gunicorn's 120s timeout. This is the only route that returns a large
+    response - never point a cron-job.org job at it (response size cap).
+    """
+    try:
+        from backtest import run_backtest, summarise
+        from data_fetch import fetch_gold_1h
+
+        candles = min(int(request.args.get("candles", 5000)), 5000)
+        max_hold = int(request.args.get("max_hold", 48))
+
+        df = fetch_gold_1h(outputsize=candles)
+        trades = run_backtest(df, max_hold=max_hold)
+        if trades.empty:
+            return jsonify({"trades": 0, "note": "no signals in this range - try more candles"})
+
+        def block(subset):
+            if subset.empty:
+                return None
+            return {
+                "trades": len(subset),
+                "win_rate_pct": round((subset["r"] > 0).mean() * 100, 1),
+                "expectancy_r": round(subset["r"].mean(), 3),
+            }
+
+        return jsonify({
+            "period": {"from": str(df.index[0]), "to": str(df.index[-1]), "candles": len(df)},
+            "overall": block(trades),
+            "with_confluence": block(trades[trades["confluence"]]),
+            "without_confluence": block(trades[~trades["confluence"]]),
+            "by_direction": {t: block(trades[trades["type"] == t]) for t in trades["type"].unique()},
+            "by_liquidity": {l: block(trades[trades["liquidity"] == l]) for l in trades["liquidity"].unique()},
+            "exits": trades["exit"].value_counts().to_dict(),
+            "summary_line": summarise(trades, "ALL"),
+            "caveat": "Expectancy is mean R per trade. Under ~30 trades treat it as a hint, not proof.",
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/backfill")

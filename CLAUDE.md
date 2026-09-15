@@ -122,9 +122,14 @@ must never block an alert. Preserve this pattern in anything you add.
 |---|---|
 | `/` | Keep-alive. Must stay tiny — cron-job.org caps response size. |
 | `/run` | Hourly check. Returns `"ok"` (2 bytes) deliberately. |
+| `/backtest` | Replays history through the live rule. `?candles=` (max 5000). ~3s. |
 | `/backfill` | Resolves open journal rows to stop/target/timeout. Idempotent. |
 | `/stats` | Hit rate and expectancy, split by confluence and asset. |
 | `/test-notify` | Ntfy smoke test. |
+
+`/backtest` exists so the harness can run where pandas_ta and the API key
+already live, instead of requiring a local install. It is the only route
+returning a large response - never point cron-job.org at it.
 
 `/backfill` should be scheduled daily once the journal is live. `/stats`
 is read-only and safe to hit any time.
@@ -277,9 +282,10 @@ standard should hold:
    daily and read `/stats`. The question it answers: does the base rule
    have an edge, and does Level 2/3 confluence improve it or is it
    decoration?
-2. **Run `python backtest.py` with a real API key.** Answers the same
-   question immediately rather than waiting months for live signals. Not
-   blocked on anything except a key.
+2. **Hit `/backtest` on the deployed app.** Answers the same question
+   immediately rather than waiting months for live signals. Runs on Render
+   where the key and dependencies already exist; `backtest.py` is also
+   runnable locally if you ever want the CSV.
 3. **Decide on session gating from data.** `session_context.py` currently
    annotates only. Once backtest or journal data exists, split expectancy
    by liquidity bucket and gate thin sessions only if the data supports it.
