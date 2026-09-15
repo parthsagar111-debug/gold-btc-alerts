@@ -134,6 +134,53 @@ returning a large response - never point cron-job.org at it.
 `/backfill` should be scheduled daily once the journal is live. `/stats`
 is read-only and safe to hit any time.
 
+## Backtest findings (2026-09-15)
+
+Run on **852 trades, 10 years of real hourly XAU/USD (2012-2022)**, sourced
+from `ejtraderLabs/historical-data`. Read this before changing parameters.
+
+**The original configuration had no edge.** 1.5 x ATR stop / 2R target,
+all sessions: **-0.040R** expectancy, 33.3% win rate. Breakeven for 2R:1R
+is exactly 33.3%, so it sat precisely on the coin-flip line - and that is
+before spread. Ten years and 852 trades is a properly powered null result,
+not a small-sample fluke.
+
+**Level 2 and Level 3 do not discriminate.** The confluence flag was true
+on **99.4%** of trades (847/852). A flag that is almost always true carries
+no information, so those layers have never filtered anything. They remain
+display-only and are *unvalidated* - do not describe them as improving
+signal quality. `backtest.py` now emits a graded `confluence_score` instead
+of the useless boolean, so future runs can actually test them.
+
+**Thin sessions are the one significant finding.** -0.144R, t = -1.98 -
+the only result in the whole run that cleared significance. Hence
+`SUPPRESS_THIN_SESSIONS = True`. Note the asymmetry: "thin hours lose" is
+significant; "good hours win" is NOT (t = 0.85, CI spans zero).
+
+**Current configuration** - RSI 30/70, stop 2.5 x ATR, target 3R, thin
+sessions dropped:
+
+| | expectancy | n |
+|---|---|---|
+| Full 10yr | **+0.113R** (t = 1.83, 41.4% win) | 531 |
+| In-sample (2012 - Jun 2017) | +0.089R | 276 |
+| Out-of-sample (Jun 2017 - 2022) | **+0.139R** | 255 |
+| Positive years | 9 / 11 | |
+
+Chosen over higher in-sample scorers deliberately. RSI 25/75 variants
+peaked at +0.272R in-sample but collapsed to +0.070R out-of-sample on
+n=105 - textbook overfitting. This config *improves* out-of-sample and sits
+on a broad plateau: every stop >= 2.0 x ATR is positive across all target
+ratios, improving monotonically as the stop widens. That matches a
+mechanical explanation (a tight stop was being knocked out by noise before
+moves developed) rather than a curve-fit spike.
+
+**Honest caveats.** t = 1.83 is short of the 1.96 threshold. Gross of
+costs: spread and slippage are roughly 0.05R per trade at this stop
+distance, leaving perhaps +0.06R net. And the dataset ends March 2022, so
+it excludes the central-bank-driven regime that took gold past $4,000 -
+behaviour there is untested.
+
 ## Gotchas — the bug graveyard
 
 Every one of these was a real production failure. Don't reintroduce them.
@@ -286,9 +333,9 @@ standard should hold:
    immediately rather than waiting months for live signals. Runs on Render
    where the key and dependencies already exist; `backtest.py` is also
    runnable locally if you ever want the CSV.
-3. **Decide on session gating from data.** `session_context.py` currently
-   annotates only. Once backtest or journal data exists, split expectancy
-   by liquidity bucket and gate thin sessions only if the data supports it.
+3. **Re-test on post-2022 data.** The current backtest ends March 2022 and
+   misses the 2022+ central-bank regime. Sourcing hourly data for that
+   period would test whether the edge survives it.
 4. **2027 CPI dates** — BLS had not published them as of 2026-09-13. Add
    when available. FOMC 2027 entries are tentative until confirmed at the
    preceding meeting.
@@ -299,6 +346,8 @@ standard should hold:
 - ~~Outcome auto-fill~~ — `outcome_tracker.py` + `/backfill`.
 - ~~Session awareness~~ — `session_context.py`.
 - ~~Backtest harness~~ — `backtest.py`.
+- ~~Session gating~~ — evidence-based, see Backtest findings.
+- ~~Stop/target tuning~~ — 2.5 x ATR / 3R, validated out-of-sample.
 
 ### Explicitly out of scope
 

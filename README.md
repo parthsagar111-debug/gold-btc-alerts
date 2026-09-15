@@ -46,8 +46,12 @@ Only Level 1 fires signals. Everything else is context, and every layer
 fails soft — a broken enrichment never blocks an alert.
 
 Signals are suppressed when they're more than 12 hours old (a stale
-re-discovery after a restart) or when a FOMC/CPI/NFP release is within the
-event window.
+re-discovery after a restart), when a FOMC/CPI/NFP release is inside the
+event window, or when they fire in a thin-liquidity session.
+
+Stop distance, target ratio and the session gate are set from a backtest
+over 852 trades on 10 years of real hourly gold, validated out-of-sample.
+The original settings lost money; see `CLAUDE.md` for the numbers.
 
 ## Setup
 

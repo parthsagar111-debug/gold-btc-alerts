@@ -104,13 +104,19 @@ def run_backtest(df: pd.DataFrame, max_hold: int = DEFAULT_MAX_HOLD) -> pd.DataF
         if not result:
             continue
 
-        history = data.iloc[: idx + 1]
+        history = data.iloc[max(0, idx - 199) : idx + 1]
         try:
             l2 = describe_level2_context(history, sig["price"], sig["type"])
             l3 = describe_level3_context(history, sig["price"])
         except Exception:
             l2 = l3 = ""
-        has_confluence = not all(m in (l2 + l3) for m in NO_CONFLUENCE_MARKERS)
+        # The original boolean was true on 99.4% of trades and therefore
+        # carried no information. Count distinct factors instead so the
+        # split is actually able to discriminate.
+        confluence_score = sum(
+            1 for part in (l2, l3) if part and "No additional" not in part
+        ) + (l2 + l3).count(";")
+        has_confluence = confluence_score >= 2
 
         rows.append(
             {
@@ -121,6 +127,7 @@ def run_backtest(df: pd.DataFrame, max_hold: int = DEFAULT_MAX_HOLD) -> pd.DataF
                 "r": result["r"],
                 "exit": result["exit"],
                 "confluence": has_confluence,
+                "confluence_score": confluence_score,
                 "session": classify_session(sig["time"])["session"],
                 "liquidity": classify_session(sig["time"])["liquidity"],
             }

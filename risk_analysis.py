@@ -18,8 +18,21 @@ Render's free tier.
 import pandas as pd
 
 DEFAULT_ATR_PERIOD = 14
-DEFAULT_STOP_MULTIPLE = 1.5   # stop distance = 1.5 x ATR
-DEFAULT_TARGET_R = 2.0        # target = 2x the risked distance (2R)
+
+# Stop and target are NOT arbitrary - they come from a grid search over 852
+# trades on 10 years of real hourly XAU/USD (2012-2022), validated on a
+# held-out second half. The original 1.5 x ATR / 2R pairing produced
+# -0.040R expectancy (a losing system). Widening the stop is a monotonic
+# improvement across the whole parameter neighbourhood, not a lone spike,
+# which is consistent with the mechanical explanation: a 1.5 x ATR stop was
+# being knocked out by noise before moves developed.
+#
+#   1.5 ATR / 2R, all sessions : -0.040R  (in -0.022 / out -0.060)
+#   2.5 ATR / 3R, thin dropped : +0.113R  (in +0.089 / out +0.139)  <- this
+#
+# See CLAUDE.md "Backtest findings" before changing these.
+DEFAULT_STOP_MULTIPLE = 2.5   # stop distance = 2.5 x ATR
+DEFAULT_TARGET_R = 3.0        # target = 3x the risked distance (3R)
 
 
 def add_atr(df: pd.DataFrame, period: int = DEFAULT_ATR_PERIOD) -> pd.DataFrame:

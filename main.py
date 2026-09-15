@@ -32,7 +32,7 @@ from risk_analysis import build_trade_plan, describe_trade_plan
 from event_filter import get_active_event, describe_event_risk, SUPPRESS_IN_WINDOW
 from macro_context import describe_macro_context
 from state_store import load_state, save_state
-from session_context import describe_session, classify_session
+from session_context import describe_session, classify_session, SUPPRESS_THIN_SESSIONS
 
 app = Flask(__name__)
 
@@ -176,6 +176,13 @@ def check_asset(
         try:
             session_info = classify_session(signal_time)
             session_note = describe_session(signal_time)
+            # Thin sessions backtested at -0.144R (t = -1.98) - the only
+            # statistically significant finding in the run. Recorded in
+            # state either way so it can't re-fire later as "new".
+            if session_info["liquidity"] == "thin" and SUPPRESS_THIN_SESSIONS:
+                state[state_key] = signal_id
+                print(f"[{name}] Signal suppressed - thin session ({session_info['session']}).")
+                return
             if session_info["liquidity"] == "thin":
                 body += f"\n\n\U0001F317 {session_note}"
         except Exception as session_error:

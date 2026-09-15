@@ -17,6 +17,10 @@ becomes an evidence-based decision instead of a guess.
 All boundaries are UTC.
 """
 
+# Suppress signals that fire in thin-liquidity sessions. Set False to
+# annotate only (the pre-backtest behaviour).
+SUPPRESS_THIN_SESSIONS = True
+
 SESSIONS = [
     (0, 6, "Asian", "thin"),
     (7, 11, "London morning", "good"),
