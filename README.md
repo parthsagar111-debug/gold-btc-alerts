@@ -49,6 +49,11 @@ Signals are suppressed when they're more than 12 hours old (a stale
 re-discovery after a restart), when a FOMC/CPI/NFP release is inside the
 event window, or when they fire in a thin-liquidity session.
 
+Gold takes **long signals only** — over 10 years its short signals returned
+-0.011R while longs returned +0.260R, and the long-only result holds in both
+a gold bear market and a bull market. Bitcoin still takes both directions
+because it has not been backtested.
+
 Stop distance, target ratio and the session gate are set from a backtest
 over 852 trades on 10 years of real hourly gold, validated out-of-sample.
 The original settings lost money; see `CLAUDE.md` for the numbers.

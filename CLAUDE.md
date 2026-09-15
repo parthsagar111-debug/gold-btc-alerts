@@ -157,8 +157,44 @@ the only result in the whole run that cleared significance. Hence
 `SUPPRESS_THIN_SESSIONS = True`. Note the asymmetry: "thin hours lose" is
 significant; "good hours win" is NOT (t = 0.85, CI spans zero).
 
+**Gold is BUY-only.** The single largest finding. Over the same 531
+trades, split by direction:
+
+| | expectancy | t | win | in / out |
+|---|---|---|---|---|
+| BUY only | **+0.260R** | **+2.74** | 45.7% | +0.229 / +0.299 |
+| SELL only | -0.011R | -0.14 | 37.8% | -0.045 / +0.022 |
+| Both (previous) | +0.113R | +1.83 | 41.4% | +0.089 / +0.139 |
+
+SELL signals were contributing nothing while halving overall expectancy.
+Dropping them is the first change in this project to clear statistical
+significance (t > 1.96).
+
+Robustness, because a result this good deserves suspicion:
+- **10 of 11 years positive.**
+- **Works in both gold regimes**, which was the main worry - a mean-reversion
+  long-only rule could easily be a bull-market artifact. 2012-2015 was a
+  gold *bear* market (1790 -> 1050) and BUY-only returned **+0.335R
+  (t = 2.11)** through it; the 2019-2022 bull returned **+0.382R (t = 2.18)**.
+  Both individually significant, in opposite regimes.
+- **Parameter plateau, not a spike** - every stop/target cell from 1.5 to
+  3.0 x ATR and 1.5R to 4R is positive, improving monotonically.
+- **Holding period insensitive** - stable from 2 to 7 days.
+
+Mechanically this is what you would expect: buying oversold dips is a
+mean-reversion trade, and shorting overbought in an instrument with a
+persistent structural bid fights the tape.
+
+Note the expectancy gradient continues past the current settings (3.0 ATR /
+4R scored +0.336R). That was NOT adopted - it is untested out-of-sample,
+and chasing a monotonic gradient is how parameter sets end up absurd.
+
+**Bitcoin is untested.** It keeps both directions because no equivalent
+backtest exists for it. Do not assume the gold result transfers - different
+asset, different regime, 4h candles.
+
 **Current configuration** - RSI 30/70, stop 2.5 x ATR, target 3R, thin
-sessions dropped:
+sessions dropped, gold BUY-only:
 
 | | expectancy | n |
 |---|---|---|
@@ -333,7 +369,9 @@ standard should hold:
    immediately rather than waiting months for live signals. Runs on Render
    where the key and dependencies already exist; `backtest.py` is also
    runnable locally if you ever want the CSV.
-3. **Re-test on post-2022 data.** The current backtest ends March 2022 and
+3. **Backtest Bitcoin.** It currently runs both directions on untested
+   settings inherited from gold. Needs its own 4h-candle history.
+4. **Re-test on post-2022 data.** The current backtest ends March 2022 and
    misses the 2022+ central-bank regime. Sourcing hourly data for that
    period would test whether the edge survives it.
 4. **2027 CPI dates** — BLS had not published them as of 2026-09-13. Add
@@ -348,6 +386,7 @@ standard should hold:
 - ~~Backtest harness~~ — `backtest.py`.
 - ~~Session gating~~ — evidence-based, see Backtest findings.
 - ~~Stop/target tuning~~ — 2.5 x ATR / 3R, validated out-of-sample.
+- ~~Direction filter~~ — gold BUY-only, significant in both regimes.
 
 ### Explicitly out of scope
 

@@ -37,6 +37,7 @@ def get_signals(
     cooldown_hours: int = 8,
     rsi_oversold: float = 50,
     rsi_overbought: float = 50,
+    directions: tuple = ("BUY", "SELL"),
 ) -> pd.DataFrame:
     """
     Walks through the dataframe and returns only NEW signal events
@@ -54,6 +55,13 @@ def get_signals(
         sell = (row["EMA20"] < row["EMA50"]) and (row["RSI"] > rsi_overbought) and (row["MACD"] < row["MACD_signal"])
 
         sig_type = "BUY" if buy else ("SELL" if sell else None)
+
+        # `directions` restricts which sides the rule may emit. Gold is
+        # BUY-only: over 10 years of hourly data its SELL signals returned
+        # -0.011R (t = -0.14) while BUY returned +0.260R (t = +2.74).
+        # See CLAUDE.md "Backtest findings".
+        if sig_type and sig_type not in directions:
+            sig_type = None
 
         if sig_type:
             cooldown_passed = (
@@ -83,6 +91,7 @@ def get_signals_recovery(
     rsi_oversold: float = 30,
     rsi_overbought: float = 70,
     lookback_hours: int = 6,
+    directions: tuple = ("BUY", "SELL"),
 ) -> pd.DataFrame:
     """
     Bitcoin-specific signal logic, based on a research-backed pattern that
@@ -123,6 +132,13 @@ def get_signals_recovery(
         sell = rsi_recovered_from_overbought and (row["MACD"] < row["MACD_signal"])
 
         sig_type = "BUY" if buy else ("SELL" if sell else None)
+
+        # `directions` restricts which sides the rule may emit. Gold is
+        # BUY-only: over 10 years of hourly data its SELL signals returned
+        # -0.011R (t = -0.14) while BUY returned +0.260R (t = +2.74).
+        # See CLAUDE.md "Backtest findings".
+        if sig_type and sig_type not in directions:
+            sig_type = None
 
         if sig_type:
             cooldown_passed = (

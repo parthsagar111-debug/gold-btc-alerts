@@ -57,6 +57,7 @@ def check_asset(
     signal_fn=get_signals,
     rsi_oversold: float = 50,
     rsi_overbought: float = 50,
+    directions: tuple = ("BUY", "SELL"),
 ) -> None:
     try:
         df = fetch_fn()
@@ -70,7 +71,14 @@ def check_asset(
             f"trend={snap['trend']} rsi={snap['rsi']} macd={snap['macd_state']}"
         )
 
-        signals = signal_fn(df, cooldown_hours=8, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought)
+        try:
+            signals = signal_fn(
+                df, cooldown_hours=8, rsi_oversold=rsi_oversold,
+                rsi_overbought=rsi_overbought, directions=directions,
+            )
+        except TypeError:
+            # get_signals (the legacy midline rule) has no `directions` arg
+            signals = signal_fn(df, cooldown_hours=8, rsi_oversold=rsi_oversold, rsi_overbought=rsi_overbought)
 
         if signals.empty:
             print(f"[{name}] No active signal.")
@@ -293,7 +301,11 @@ def run_check():
     print(f"=== Run at {datetime.now(timezone.utc).isoformat()} ===")
     state = load_state()
 
-    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
+    # Gold is BUY-only - see CLAUDE.md "Backtest findings". Bitcoin keeps
+    # both directions because it has never been backtested; do not assume
+    # the gold result transfers to it.
+    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals_recovery,
+                rsi_oversold=30, rsi_overbought=70, directions=("BUY",))
     check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
     maybe_send_daily_status(state)
 
