@@ -92,6 +92,30 @@ first hourly run after idle hits a cold-start splash page instead of the app.
 `GOOGLE_SERVICE_ACCOUNT`. Without these the journal fails silently and
 alerts still send.
 
+## Measuring whether it works
+
+Only Level 1 fires signals, and its edge has never been measured. Two ways
+to find out:
+
+```bash
+python backtest.py                 # replay history through the live rule
+python backtest.py --candles 2000
+```
+
+Prints hit rate and expectancy in R, split by whether Level 2/3 confluence
+was present, by signal direction, and by trading session. Writes
+`backtest_results.csv`.
+
+For live results, once the journal is running:
+
+| Route | Purpose |
+|---|---|
+| `/backfill` | Resolve open journal rows to stop / target / timeout |
+| `/stats` | Hit rate and expectancy from resolved rows |
+
+Schedule `/backfill` daily on cron-job.org. Under ~30 trades, treat any
+expectancy number as a hint rather than proof.
+
 ## Local development
 
 ```bash

@@ -32,6 +32,7 @@ from risk_analysis import build_trade_plan, describe_trade_plan
 from event_filter import get_active_event, describe_event_risk, SUPPRESS_IN_WINDOW
 from macro_context import describe_macro_context
 from state_store import load_state, save_state
+from session_context import describe_session, classify_session
 
 app = Flask(__name__)
 
@@ -169,6 +170,17 @@ def check_asset(
         except Exception as risk_error:
             print(f"[{name}] Risk framing failed (alert still sent OK): {risk_error}")
 
+        # Session context. Annotates only - see session_context.py for why
+        # this deliberately does not gate.
+        session_note = ""
+        try:
+            session_info = classify_session(signal_time)
+            session_note = describe_session(signal_time)
+            if session_info["liquidity"] == "thin":
+                body += f"\n\n\U0001F317 {session_note}"
+        except Exception as session_error:
+            print(f"[{name}] Session context failed (alert still sent OK): {session_error}")
+
         # For Gold only: historical seasonality context.
         if name == "GOLD":
             try:
@@ -238,6 +250,7 @@ def check_asset(
                 seasonality=seasonality_note,
                 macro=macro_note,
                 event_risk=active_event,
+                notes=session_note,
             )
         except Exception as journal_error:
             print(f"[{name}] Journal logging failed (alert still sent OK): {journal_error}")
@@ -300,6 +313,30 @@ def test_notify_endpoint():
         priority="default",
     )
     return jsonify({"status": "test notification sent", "time": datetime.now(timezone.utc).isoformat()})
+
+
+@app.route("/backfill")
+def backfill_endpoint():
+    """
+    Resolves open journal rows (stop/target/timeout) so expectancy can be
+    computed. Safe to call repeatedly - only touches unresolved rows.
+    Schedule this daily on cron-job.org once the journal is live.
+    """
+    try:
+        from outcome_tracker import backfill_outcomes
+        return jsonify(backfill_outcomes())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/stats")
+def stats_endpoint():
+    """Hit rate and expectancy from resolved journal rows."""
+    try:
+        from outcome_tracker import expectancy_summary
+        return jsonify(expectancy_summary())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/run")

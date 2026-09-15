@@ -116,6 +116,19 @@ must never block an alert. Preserve this pattern in anything you add.
 
 ---
 
+## Routes
+
+| Route | Purpose |
+|---|---|
+| `/` | Keep-alive. Must stay tiny — cron-job.org caps response size. |
+| `/run` | Hourly check. Returns `"ok"` (2 bytes) deliberately. |
+| `/backfill` | Resolves open journal rows to stop/target/timeout. Idempotent. |
+| `/stats` | Hit rate and expectancy, split by confluence and asset. |
+| `/test-notify` | Ntfy smoke test. |
+
+`/backfill` should be scheduled daily once the journal is live. `/stats`
+is read-only and safe to hit any time.
+
 ## Gotchas — the bug graveyard
 
 Every one of these was a real production failure. Don't reintroduce them.
@@ -153,6 +166,17 @@ The staleness gate stays as a backstop for runs where Sheets is down.
 
 **TA-Lib is not installable here.** `pandas_ta.cdl_pattern()` requires it.
 All candlestick patterns in `level3_analysis.py` are hand-implemented.
+
+**NFP is not always 12:30 UTC.** 08:30 US Eastern is 12:30 UTC under EDT
+but 13:30 under EST. `event_filter.py` computes the offset from the DST
+rule (second Sunday of March to first Sunday of November). The hardcoded
+FOMC/CPI entries encode their own offsets, so check the season when adding
+dates. Hand-rolled rather than `zoneinfo` because that needs `tzdata` on
+Windows.
+
+**gspread has no default timeout.** A hung Sheets call would run into
+gunicorn's 120s and SIGKILL the run — the opposite of failing soft.
+`journal_logger.open_spreadsheet()` sets 15s. Keep it.
 
 **Render free tier blocks SMTP** (ports 25/465/587) — that's why Ntfy, not
 email. Telegram is blocked in India. Don't propose either.
@@ -247,22 +271,28 @@ standard should hold:
 
 ## Roadmap (priority order)
 
-1. **Deploy the journal and measure expectancy.** Highest value by far.
-   Levels 1–3 rest on an assumption that has never been tested: that the
-   base rule has an edge. After ~30 logged signals, compute hit rate and
-   `expectancy = (win_rate × avg_win_R) − (loss_rate × avg_loss_R)`, and
-   check whether Level 2/3 confluence actually improves outcomes. If
-   expectancy is negative, adding layers makes it lose faster.
-2. ~~**Populate `KNOWN_EVENTS`**~~ — done 2026-09-13: FOMC through Sep 2027,
-   CPI through Dec 2026. **Add 2027 CPI dates** once bls.gov publishes its
-   2027 schedule (not yet out at time of writing).
-3. ~~**Move state to Google Sheets**~~ — done 2026-09-13 (`state_store.py`).
-4. **Outcome auto-fill** — a follow-up job that re-checks price at fixed
-   horizons and fills `outcome` / `r_multiple`.
-5. **Session awareness** — signals in thin Asian hours are lower quality.
-   Timestamps are already available; nothing uses them yet.
-6. **Backtest harness** — replay historical candles through
-   `get_signals_recovery` to get expectancy without waiting months.
+1. **Deploy the journal and measure expectancy.** Still the highest-value
+   item, and the only one blocked on credentials. Needs `GOOGLE_SHEETS_ID`
+   and `GOOGLE_SERVICE_ACCOUNT` on Render. Once live, schedule `/backfill`
+   daily and read `/stats`. The question it answers: does the base rule
+   have an edge, and does Level 2/3 confluence improve it or is it
+   decoration?
+2. **Run `python backtest.py` with a real API key.** Answers the same
+   question immediately rather than waiting months for live signals. Not
+   blocked on anything except a key.
+3. **Decide on session gating from data.** `session_context.py` currently
+   annotates only. Once backtest or journal data exists, split expectancy
+   by liquidity bucket and gate thin sessions only if the data supports it.
+4. **2027 CPI dates** — BLS had not published them as of 2026-09-13. Add
+   when available. FOMC 2027 entries are tentative until confirmed at the
+   preceding meeting.
+
+### Done
+- ~~Populate `KNOWN_EVENTS`~~ — FOMC through Sep 2027, CPI through Dec 2026.
+- ~~Move state to Google Sheets~~ — `state_store.py`, with local fallback.
+- ~~Outcome auto-fill~~ — `outcome_tracker.py` + `/backfill`.
+- ~~Session awareness~~ — `session_context.py`.
+- ~~Backtest harness~~ — `backtest.py`.
 
 ### Explicitly out of scope
 
