@@ -39,6 +39,9 @@ HEADER_ROW = [
     "atr", "stop", "target", "risk_per_unit",
     "level2_context", "level3_context", "seasonality", "macro", "event_risk",
     "outcome", "exit_price", "r_multiple", "notes",
+    # Appended last so rows written before it existed stay aligned.
+    # SIGNAL = validated RSI 30 rule; WATCH = looser RSI 45 tier (main.py).
+    "tier",
 ]
 
 

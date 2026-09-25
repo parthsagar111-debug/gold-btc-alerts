@@ -48,6 +48,19 @@ DAILY_STATUS_HOUR = 9  # send a status ping once a day around 9am UTC-ish
 # Stale signals are recorded in state silently instead of notifying.
 MAX_SIGNAL_AGE_HOURS = 12
 
+# Gold WATCH tier: the same recovery rule with a looser RSI 45 threshold,
+# sent as clearly lower-conviction alerts so the validated RSI 30 SIGNAL
+# isn't diluted. Added because RSI 30 fires ~once a fortnight with dry
+# spells of up to 73 days. The extra alerts are NOT a validated edge.
+# Backtested at +0.036R (t = 0.74), -0.022 in-sample / +0.098
+# out-of-sample, about +1.8/week. Tagged tier=WATCH in the journal so live
+# data decides whether they're kept. See CLAUDE.md "WATCH tier".
+WATCH_RSI_OVERSOLD = 45
+
+# A WATCH alert within this many hours of a SIGNAL is the same move, so it
+# is recorded silently rather than sent twice. Matches the 8h cooldown.
+WATCH_DEDUP_HOURS = 8
+
 
 def check_asset(
     name: str,
@@ -58,6 +71,8 @@ def check_asset(
     rsi_oversold: float = 50,
     rsi_overbought: float = 50,
     directions: tuple = ("BUY", "SELL"),
+    tier: str = "SIGNAL",
+    defer_to_key: str = "",
 ) -> None:
     try:
         df = fetch_fn()
@@ -91,9 +106,31 @@ def check_asset(
             print(f"[{name}] Latest signal already alerted. Skipping.")
             return
 
+        # WATCH defers to the main SIGNAL tier: if a SIGNAL for this asset
+        # fired within WATCH_DEDUP_HOURS, this is the same move - record
+        # silently. state[defer_to_key] is "{time}_{type}" (see signal_id).
+        if defer_to_key and state.get(defer_to_key):
+            try:
+                main_time = pd.Timestamp(state[defer_to_key].rsplit("_", 1)[0])
+                watch_time = pd.Timestamp(latest["time"])
+                if main_time.tzinfo is None:
+                    main_time = main_time.tz_localize("UTC")
+                if watch_time.tzinfo is None:
+                    watch_time = watch_time.tz_localize("UTC")
+                if abs((watch_time - main_time).total_seconds()) <= WATCH_DEDUP_HOURS * 3600:
+                    state[state_key] = signal_id
+                    print(f"[{name}] {tier} skipped - same move as SIGNAL at {main_time}.")
+                    return
+            except Exception as dedup_error:
+                print(f"[{name}] {tier} dedup check failed (continuing): {dedup_error}")
+
         display_label = latest["type"]
-        icon = "🟢" if latest["type"] == "BUY" else "🔴"
-        title = f"{icon} {name} {display_label} signal"
+        if tier == "WATCH":
+            icon = "👀"
+            title = f"{icon} {name} {display_label} watch (lower conviction)"
+        else:
+            icon = "🟢" if latest["type"] == "BUY" else "🔴"
+            title = f"{icon} {name} {display_label} signal"
 
         # Compare the price NOW (snap, fetched at the top of this function)
         # against the price WHEN the signal triggered (latest, could be hours
@@ -160,6 +197,11 @@ def check_asset(
             f"RSI: {latest['rsi']} | EMA20: {latest['ema20']} | EMA50: {latest['ema50']}\n\n"
             f"{favorable_note}"
         )
+        if tier == "WATCH":
+            body = (
+                f"WATCH tier: RSI recovered through {rsi_oversold:g}, not the validated 30. "
+                f"Backtested near breakeven - context, not a trade signal.\n\n" + body
+            )
 
         # Every enrichment below is wrapped individually and fails soft: a
         # single broken layer must never block the alert itself. Notes are
@@ -236,9 +278,9 @@ def check_asset(
         if active_event:
             body += f"\n\n⚠️ {describe_event_risk(active_event)}"
 
-        notify_all(title, body, priority="high")
+        notify_all(title, body, priority="default" if tier == "WATCH" else "high")
         state[state_key] = signal_id
-        print(f"[{name}] New signal alerted: {latest['type']} @ {latest['price']:.2f}")
+        print(f"[{name}] New {tier} alerted: {latest['type']} @ {latest['price']:.2f}")
 
         # Signal journal. This is what makes the whole system measurable -
         # without it there is no hit rate and no expectancy, and the Level 2/3
@@ -266,6 +308,7 @@ def check_asset(
                 macro=macro_note,
                 event_risk=active_event,
                 notes=session_note,
+                tier=tier,
             )
         except Exception as journal_error:
             print(f"[{name}] Journal logging failed (alert still sent OK): {journal_error}")
@@ -301,11 +344,25 @@ def run_check():
     print(f"=== Run at {datetime.now(timezone.utc).isoformat()} ===")
     state = load_state()
 
+    # SIGNAL and WATCH both read gold; fetch once per run to spare the
+    # Twelve Data rate limit. Lazy, so a fetch failure still fails soft
+    # inside check_asset's try.
+    gold_cache = {}
+
+    def fetch_gold_once():
+        if "df" not in gold_cache:
+            gold_cache["df"] = fetch_gold_1h()
+        return gold_cache["df"].copy()
+
     # Gold is BUY-only - see CLAUDE.md "Backtest findings". Bitcoin keeps
     # both directions because it has never been backtested; do not assume
     # the gold result transfers to it.
-    check_asset("GOLD", fetch_gold_1h, state, "gold_last_signal", signal_fn=get_signals_recovery,
+    check_asset("GOLD", fetch_gold_once, state, "gold_last_signal", signal_fn=get_signals_recovery,
                 rsi_oversold=30, rsi_overbought=70, directions=("BUY",))
+    # Must run after the SIGNAL check above so its dedup sees this run's SIGNAL.
+    check_asset("GOLD", fetch_gold_once, state, "gold_last_watch", signal_fn=get_signals_recovery,
+                rsi_oversold=WATCH_RSI_OVERSOLD, rsi_overbought=70, directions=("BUY",),
+                tier="WATCH", defer_to_key="gold_last_signal")
     check_asset("BTC", fetch_bitcoin_1h, state, "btc_last_signal", signal_fn=get_signals_recovery, rsi_oversold=30, rsi_overbought=70)
     maybe_send_daily_status(state)
 

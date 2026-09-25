@@ -45,6 +45,12 @@ Price has moved WITH this signal since it triggered.
 Only Level 1 fires signals. Everything else is context, and every layer
 fails soft — a broken enrichment never blocks an alert.
 
+Gold alerts come in two tiers. **SIGNAL** is the backtested rule (RSI 30).
+It fires about once a fortnight. **WATCH** 👀 is the same rule at RSI 45 and
+adds about two alerts a week. WATCH is labelled lower conviction because
+its extra alerts backtest near breakeven. It exists so the phone isn't
+silent for weeks, and the journal tracks it separately.
+
 Signals are suppressed when they're more than 12 hours old (a stale
 re-discovery after a restart), when a FOMC/CPI/NFP release is inside the
 event window, or when they fire in a thin-liquidity session.

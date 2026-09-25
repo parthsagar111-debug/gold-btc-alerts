@@ -293,10 +293,55 @@ in only 5-7 of 11 years. Only N=2000h clears t = 1.96 on the full sample
 warns about. At most this is something to *annotate* in the journal and
 revisit on live data. It is not a gate.
 
-Harness: the test reused the live `get_signals_recovery` and plain-pandas
+## WATCH tier (2026-09-25)
+
+The validated RSI 30 rule fires **0.48/week**. The median gap is 10 days,
+the 90th percentile gap 35 days, and the longest 73 days. It had not fired
+since 31 Aug by the time the app was live, so silence was correct behaviour
+and not a bug. The owner wanted more alerts and accepted lower accuracy.
+So gold now runs a second, clearly labelled tier. The validated rule is
+untouched.
+
+- **SIGNAL**: RSI 30, as before. High priority.
+- **WATCH**: the same `get_signals_recovery` rule at `WATCH_RSI_OVERSOLD = 45`
+  (`main.py`). Default priority, titled "watch (lower conviction)". A WATCH
+  within 8h of a SIGNAL is the same move and is recorded silently. All the
+  other gates (dedup, staleness, event, thin session) apply unchanged.
+  Journal rows carry `tier`, and `/stats` splits `by_tier`.
+
+**Measure the increment, not the variant.** The trap here: RSI 35 *on its
+own* scores +0.084R, but about half its signals are within 8h of an RSI 30
+signal. The alerts it would *add* score -0.071R. Extra alerts vs RSI 30, 10
+years, BUY-only, thin dropped:
+
+| threshold | extra/wk | extras' expectancy | in / out | +years |
+|---|---|---|---|---|
+| RSI 35 | +0.48 | -0.071R | -0.110 / -0.031 | 4/11 |
+| RSI 40 | +1.15 | -0.022R | -0.061 / +0.023 | 5/11 |
+| **RSI 45 (chosen)** | **+1.83** | **+0.036R** (t 0.74) | -0.022 / +0.098 | 5/11 |
+| RSI 50 | +2.21 | +0.099R (t 2.15) | +0.006 / +0.190 | 7/11 |
+| lookback 12 | +0.21 | -0.290R | -0.195 / -0.453 | 2/11 |
+| thin sessions | +0.27 | -0.063R | +0.065 / -0.283 | 3/11 |
+
+WATCH alerts are **roughly breakeven and not a validated edge**. Never
+describe them as one. RSI 50 was rejected despite scoring best: all of its
+gain is out-of-sample (the 2017-22 bull), none in-sample. That is the same
+regime-dependence that sank the high-vol finding. Revisit the threshold from
+`/stats` `by_tier` once there are 30+ resolved WATCH rows. Kill the tier if
+it's negative.
+
+## Harness notes
+
+The tests above reused the live `get_signals_recovery` and plain-pandas
 `add_atr`, run on `ejtraderLabs/historical-data` `XAUUSD/XAUUSDh1.csv`
-(prices are x100 in that file). It was a one-off script and was not
-committed; the numbers above are enough to avoid re-running it.
+(prices are x100 in that file). They were one-off scripts and were not
+committed; the numbers above are enough to avoid re-running them. Recent
+live-period checks used Yahoo `GC=F` hourly (COMEX futures, a close proxy
+for spot) because no Twelve Data key is available locally.
+
+**`outcome_tracker` used to score a target hit as +2R** after the target
+moved to 3R. It now computes R from the stored stop and target. Any rows
+resolved before 2026-09-25 as `target` with `r_multiple` 2.0 should be 3.0.
 
 ## Gotchas — the bug graveyard
 

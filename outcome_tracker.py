@@ -9,7 +9,8 @@ directly comparable rather than being two different measurements.
 
 Resolution per row:
     stop hit    -> -1R
-    target hit  -> +2R
+    target hit  -> +(target distance / stop distance) R, i.e. +3R at the
+                   current 2.5 x ATR / 3R settings
     both inside one candle -> stop assumed first (conservative; OHLC can't
                    tell us the order)
     neither, and older than MARK_TO_MARKET_HOURS -> marked to market
@@ -45,7 +46,9 @@ def _resolve(candles: pd.DataFrame, signal_type: str, entry: float, stop: float,
         if hit_stop:
             return "stop", round(float(stop), 2), -1.0
         if hit_target:
-            return "target", round(float(target), 2), 2.0
+            # Computed, not hardcoded: this said 2.0 and went stale when the
+            # target moved to 3R, which understated every live win.
+            return "target", round(float(target), 2), round(abs(target - entry) / risk, 3)
     return None
 
 
@@ -147,5 +150,10 @@ def expectancy_summary() -> dict:
         "with_confluence": stats(df[has_confluence]),
         "without_confluence": stats(df[~has_confluence]),
         "by_asset": {a: stats(df[df["asset"] == a]) for a in df["asset"].unique()},
+        # Rows logged before the tier column existed are all SIGNAL.
+        "by_tier": {
+            t: stats(df[df["tier"].replace("", "SIGNAL") == t])
+            for t in ("SIGNAL", "WATCH")
+        },
         "caveat": "Under ~30 trades this is a hint, not proof.",
     }
