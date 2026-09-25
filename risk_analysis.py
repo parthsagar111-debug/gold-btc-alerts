@@ -34,6 +34,14 @@ DEFAULT_ATR_PERIOD = 14
 DEFAULT_STOP_MULTIPLE = 2.5   # stop distance = 2.5 x ATR
 DEFAULT_TARGET_R = 3.0        # target = 3x the risked distance (3R)
 
+# Typical XAU/USD spread in price points. Our feed is OHLC only, with no
+# bid/ask, so live spread can't be measured - this is a reference figure
+# used to report cost drag per signal. 0.40 sits between ECN (0.15-0.40)
+# and standard accounts (0.25-0.60). The 1.5x approximates slippage on
+# entry and stop fills.
+TYPICAL_SPREAD_POINTS = 0.40
+SLIPPAGE_MULTIPLIER = 1.5
+
 
 def add_atr(df: pd.DataFrame, period: int = DEFAULT_ATR_PERIOD) -> pd.DataFrame:
     """
@@ -83,6 +91,12 @@ def build_trade_plan(
         stop = entry_price + risk_distance
         target = entry_price - risk_distance * target_r
 
+    # Cost drag in R. Worth reporting because it scales inversely with
+    # price: at gold ~$1380 this was ~0.08R (a third of the edge); at
+    # ~$4400 the same spread is ~0.012R, because spreads stayed flat in
+    # dollar terms while gold tripled.
+    cost_r = (TYPICAL_SPREAD_POINTS * SLIPPAGE_MULTIPLIER) / risk_distance
+
     return {
         "atr": round(atr, 2),
         "atr_pct": round(atr / entry_price * 100, 2),
@@ -90,6 +104,7 @@ def build_trade_plan(
         "target": round(target, 2),
         "risk_per_unit": round(risk_distance, 2),
         "target_r": target_r,
+        "cost_r": round(cost_r, 4),
     }
 
 
@@ -114,5 +129,6 @@ def describe_trade_plan(plan: dict, signal_type: str) -> str:
     return (
         f"Risk plan: stop {plan['stop']}, target {plan['target']} "
         f"({plan['target_r']:.0f}R) | ATR {plan['atr']} ({plan['atr_pct']}% of price). "
-        f"Risking {plan['risk_per_unit']} per unit."
+        f"Risking {plan['risk_per_unit']} per unit. "
+        f"Est. spread+slippage cost ~{plan['cost_r']:.3f}R."
     )

@@ -211,11 +211,92 @@ ratios, improving monotonically as the stop widens. That matches a
 mechanical explanation (a tight stop was being knocked out by noise before
 moves developed) rather than a curve-fit spike.
 
-**Honest caveats.** t = 1.83 is short of the 1.96 threshold. Gross of
-costs: spread and slippage are roughly 0.05R per trade at this stop
-distance, leaving perhaps +0.06R net. And the dataset ends March 2022, so
-it excludes the central-bank-driven regime that took gold past $4,000 -
-behaviour there is untested.
+**Honest caveats.** The dataset ends March 2022, so it excludes the
+central-bank-driven regime that took gold past $4,000 - behaviour there is
+untested.
+
+On costs: an earlier note claimed ~0.05R per trade. That was right for the
+backtest era and is now too pessimistic. Spread cost scales inversely with
+price, and gold tripled while spreads stayed flat in dollar terms. At the
+sample's ~$1,380 average a 0.40 spread with slippage cost ~0.079R (30% of
+the edge); at ~$4,400 it costs ~0.012R (under 5%). `risk_analysis.py`
+reports this per signal.
+
+**Comparison against the published `analyze-gold` skill (mcpmarket)**,
+tested on our data rather than read off the page:
+- Its session window (08:00-21:00 UTC) scores +0.259R vs our +0.260R -
+  independent convergence on the same answer.
+- Its 1 x ATR stop floor scores +0.138R vs our 2.5 x ATR at +0.260R. Its own
+  text says "gold wicks hunt tight stops", then sets the floor too tight.
+- Its "skip when H1 ATR > 20" rule is not supported by our data: the highest
+  volatility quartile was our *best* in-sample bucket (+0.542R, t = 3.38).
+  That does **not** mean high vol is good - the effect failed out-of-sample,
+  see "High-volatility finding" below. The defensible claim is only that
+  there is no evidence for *skipping* high vol. Its absolute thresholds are also stale - its worked
+  example prices gold at 2345, so 20 pts was 0.85% of price then and 0.44%
+  now, meaning the rule would fire near-constantly today. ATR *multipliers*
+  are regime-proof; absolute point thresholds are not.
+- Event-gate width is immaterial: only 5 of 243 signals fall inside our
+  4h/2h NFP window, and suppressing them moves expectancy by 0.001R.
+
+## High-volatility finding: does NOT survive (2026-09-25)
+
+Roadmap item 3. Tested the same way as BUY-only: same 243 trades (BUY-only,
+thin dropped, 2.5 x ATR / 3R, 48-candle hold), same Jun-2017 split. The
+original numbers were reproduced exactly first. Two details matter. "Volatility"
+here means **ATR as % of price**, not absolute ATR. The quartile cutoff was
+computed on the **full sample**, which is lookahead: a live rule could not
+have known it in 2013.
+
+**Verdict: do not prefer, weight or gate on high volatility.** It was an
+in-sample artifact of two regimes, not a property of the setup.
+
+Even the original result was weaker than it looked. +0.542R vs +0.165R is a
+difference test of t = 1.90, so it was never significant *as a difference*.
+t = 3.38 only shows the bucket beats zero, which the base rule already does.
+The buckets are not monotonic either (Q1 +0.315, Q2 +0.004, Q3 +0.177, Q4
++0.542).
+
+| Test | high-vol | rest | verdict |
+|---|---|---|---|
+| In-sample (cutoff 0.344% ATR, set in-sample) | +0.616R (n=34) | +0.098R | edge |
+| **Out-of-sample, same cutoff** | **+0.296R (n=20)** | **+0.300R** | **none (diff t = -0.01)** |
+| OOS, quartile recomputed within the half | +0.111R | +0.362R | reversed |
+
+- **Year-by-year: it is two regimes.** 36 of the 61 high-vol trades fall in
+  2013-2016, the gold crash, where high vol beat the rest in every year.
+  After that it is 2019 -1.00R (n=2), 2020 +0.456R vs +0.262R, and 2021
+  -0.028R vs +0.523R. 2017 and 2022 have no high-vol trades at all. So a fixed
+  ATR% level is mostly a proxy for "2013 or 2020".
+- **Parameter neighbourhood: no plateau, just a sign flip.** In-sample
+  high-vol wins in every variant. Out-of-sample it wins in almost none:
+  - stop x target grid (1.5-3.0 x ATR, 1.5-4R): high-vol minus rest is
+    <= 0 OOS in **16 of 16** cells (range -0.37 to -0.00).
+  - ATR period 7/14/21/28: worse OOS in **4 of 4**.
+  - cutoff top 50/33/25/20/10%: worse OOS in 4 of 5, and top 20% is only
+    +0.035R ahead on n=19.
+  - Absolute ATR instead of ATR%: +0.104R vs +0.374R OOS.
+- **Hold-period dependent.** 66% of high-vol trades exit on the 48-candle
+  timeout rather than stop or target, because wide ATR brackets are rarely
+  reached in 2 days. The edge is mostly mark-to-market drift. With a 24h
+  hold, OOS high-vol is -0.005R vs +0.270R.
+- **No mechanism.** SELL signals gain nothing from high vol out-of-sample
+  (+0.011R vs +0.024R).
+
+**The one variant that keeps its sign, and why it still isn't adopted.**
+Ranking ATR% against its own *trailing* N hours has no lookahead and is
+regime-relative, so it measures a vol spike rather than a vol level. That
+version stays ahead OOS for every window (N = 500/1000/2000/5000h, +0.06 to
++0.19R). But the OOS difference t-stats are 0.18-0.64, and it beats the rest
+in only 5-7 of 11 years. Only N=2000h clears t = 1.96 on the full sample
+(t = 2.38), and picking one window out of four is the cherry-pick this file
+warns about. At most this is something to *annotate* in the journal and
+revisit on live data. It is not a gate.
+
+Harness: the test reused the live `get_signals_recovery` and plain-pandas
+`add_atr`, run on `ejtraderLabs/historical-data` `XAUUSD/XAUUSDh1.csv`
+(prices are x100 in that file). It was a one-off script and was not
+committed; the numbers above are enough to avoid re-running it.
 
 ## Gotchas — the bug graveyard
 
@@ -265,6 +346,13 @@ Windows.
 **gspread has no default timeout.** A hung Sheets call would run into
 gunicorn's 120s and SIGKILL the run — the opposite of failing soft.
 `journal_logger.open_spreadsheet()` sets 15s. Keep it.
+
+**`updated_at_utc` in the Sheets `state` tab is last-CHANGED, not
+last-run.** `save_state` only stamps a new timestamp when the value
+actually differs, so a stale timestamp is the normal state of a quiet
+market, NOT evidence the app has stopped. This already caused one false
+alarm. To tell "running but quiet" from "dead", use cron-job.org's run
+history (or add an unconditionally-stamped `last_run_utc` key).
 
 **Render free tier blocks SMTP** (ports 25/465/587) — that's why Ntfy, not
 email. Telegram is blocked in India. Don't propose either.
@@ -343,10 +431,17 @@ service-account JSON.
 Every change in this project has been verified before deploy, and that
 standard should hold:
 
-- **Regression check**: the canonical fixture (`np.random.seed(123)`,
-  30*16 hourly gold-like candles) must yield **exactly 7 signals** from
+- **Regression check**: `python tests/test_regression.py`. The canonical
+  fixture (pinned in that file: `np.random.seed(123)`, 30*16 hourly
+  candles, `2000 + cumsum(randn * 3)`) must yield **exactly 6 signals
+  (4 BUY / 2 SELL)** from
   `get_signals_recovery(rsi_oversold=30, rsi_overbought=70)`. If that number
   moves, the trigger logic changed — intentionally or not.
+  An older prose-only version of this note said "7". That fixture was never
+  recorded and couldn't be reproduced. The pinned one gives 6 at both the
+  rebuild commit `f2bc68b` and at `10b72b4`, and the count doesn't change
+  with start price, scale, tz, or additive vs geometric walks. So the
+  trigger didn't drift. The baseline was re-pinned at 6 on 2026-09-25.
 - **Edge cases**: insufficient candles, flat prices, and tz-aware vs naive
   timestamps have all caused real crashes. Test them.
 - **End-to-end**: mock `main.notify_all` and call `check_asset()` with a
@@ -374,7 +469,7 @@ standard should hold:
 4. **Re-test on post-2022 data.** The current backtest ends March 2022 and
    misses the 2022+ central-bank regime. Sourcing hourly data for that
    period would test whether the edge survives it.
-4. **2027 CPI dates** — BLS had not published them as of 2026-09-13. Add
+5. **2027 CPI dates** — BLS had not published them as of 2026-09-13. Add
    when available. FOMC 2027 entries are tentative until confirmed at the
    preceding meeting.
 
@@ -394,6 +489,9 @@ standard should hold:
   filter; its 5/34 periods lag MACD's 12/26 so it's still negative at the
   recovery moment. Same failure mode as the old same-instant rule. Fine as
   display-only, useless as a gate.
+- **Preferring high-volatility setups** — tested 2026-09-25, failed
+  out-of-sample (+0.296R vs +0.300R). See "High-volatility finding". Don't
+  chase it again without new post-2022 data.
 - **Volume indicators** — no volume in either data feed.
 - **Gold-INR / USD-INR** — built, then removed at the owner's request.
   `XAU/INR` is not a valid Twelve Data symbol; it must be computed as
