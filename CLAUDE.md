@@ -409,6 +409,26 @@ in the repo; delete it if it reappears.
 **cron-job.org's free tier caps response size** ("output too large"). Keep
 `/` and `/run` responses tiny. `/run` returns `"ok"` (2 bytes) deliberately.
 
+**The alert job pointed at `/` instead of `/run`, and it looked healthy.**
+Until 2026-09-26 the cron-job.org "Gold BTC Alert Trigger" URL had no `/run`.
+The keep-alive page returns `200 OK` in about 1.5s, so the job showed green
+every hour, but no alert check ever ran. How to verify: Render's logs must
+show `GET /run` and `=== Run at` lines. A green cron-job.org history
+proves nothing. `/run` returns `ok`; `/` returns the "alive" JSON.
+
+**Once asleep, cron-job.org can't wake the service.** On two nights
+(2026-09-26 02:25 IST, 2026-09-28 04:05 IST) a single keep-alive ping was
+bounced at Render's edge (403 once) and never reached gunicorn. The instance
+spun down 15 min later. After that, every cron-job.org request got an
+**instant** 503 (~1s, not a cold-start timeout), while a plain `curl` still
+woke it in ~43s. The cause is unknown and Render-side. cron-job.org then
+auto-disables both jobs after repeated failures, so the outage persists
+until someone notices. Mitigation: `.github/workflows/keep-awake.yml` pings
+`/` every 15 min from GitHub as a second waker, with a 120s timeout. It
+never hits `/run`, because two triggers could race the Sheets dedup state
+and double-alert. A failed run emails the repo owner. If the jobs show
+"Inactive", wake the service first (`curl` `/`), then re-enable them.
+
 **cron-job.org's schedule UI silently drops multi-select values.** A missing
 `:25` in the keep-alive schedule went unnoticed for hours. Verify the
 crontab expression string after editing, don't trust the checkboxes.
@@ -427,11 +447,15 @@ Start Command:  gunicorn main:app --timeout 120
 The `--timeout 120` is **required**, not cosmetic — the default 30s killed
 workers.
 
-**cron-job.org** — two jobs:
+**cron-job.org** — three jobs, schedules in the job timezone (UTC):
 | Job | URL | Schedule |
 |---|---|---|
-| Alert trigger | `/run` | `30 * * * *` (hourly) |
+| Alert trigger | `/run` | `28 * * * *` (hourly, :58 IST) |
 | Keep-alive | `/` | `5,15,25,35,45,55 * * * *` |
+| Journal backfill | `/backfill` | daily, ~07:30 IST |
+
+**GitHub Actions** (`keep-awake.yml`) — backup waker, `/` only,
+`7,22,37,52 * * * *`. See the "cron-job.org can't wake the service" gotcha.
 
 The keep-alive offsets avoid colliding with the hourly run and keep the
 instance warm (Render spins down after 15 min idle; cold start ~1 min shows

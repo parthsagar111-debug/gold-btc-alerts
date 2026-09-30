@@ -1,0 +1,36 @@
+# Backup waker for the Render free instance. See CLAUDE.md "Gotchas".
+#
+# cron-job.org is the primary keep-alive, but twice (2026-09-26, -28) a single
+# ping bounced at Render's edge (403), the instance spun down, and from then
+# on every cron-job.org request got an instant 503 instead of waking it. A
+# plain request with a long timeout does wake it (~43s cold start), so this
+# job keeps retrying from a second source until the service is back.
+#
+# Hits `/` only, never `/run`: a second /run trigger could race the first on
+# the Sheets dedup state and double-alert.
+#
+# GitHub delays scheduled runs under load and pauses schedules after 60 days
+# with no commits to the repo. Neither matters for a backup; re-enable from
+# the Actions tab if it's ever paused.
+
+name: keep-awake
+
+on:
+  schedule:
+    # Offset from cron-job.org's :05/:15/... pings and the busy top of the hour.
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake gold-btc-alerts
+        # A failed run means the service did not answer within ~4 minutes:
+        # GitHub emails the repo owner, which doubles as a downtime alert.
+        run: |
+          curl --fail --silent --show-error --max-time 120 \
+               --retry 2 --retry-delay 10 --retry-all-errors \
+               -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" \
+               https://gold-btc-alerts.onrender.com/
