@@ -429,6 +429,14 @@ never hits `/run`, because two triggers could race the Sheets dedup state
 and double-alert. A failed run emails the repo owner. If the jobs show
 "Inactive", wake the service first (`curl` `/`), then re-enable them.
 
+**`state_store.STATE_KEYS` is a whitelist: any key missing from it is
+silently dropped on load.** The WATCH tier shipped without
+`gold_last_watch` in it, so WATCH dedup never persisted. Every run
+re-found the same setup, which stayed hidden only because the setups were
+past the 12h staleness gate. A fresh WATCH would have re-alerted hourly.
+Caught in live logs on 2026-10-01. `tests/test_state_store.py` now fails
+if `main.py` uses a state key that isn't whitelisted. Add new keys there.
+
 **cron-job.org's schedule UI silently drops multi-select values.** A missing
 `:25` in the keep-alive schedule went unnoticed for hours. Verify the
 crontab expression string after editing, don't trust the checkboxes.

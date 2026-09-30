@@ -25,7 +25,10 @@ from datetime import datetime, timezone
 STATE_FILE = "state.json"
 STATE_WORKSHEET = "state"
 STATE_HEADER = ["key", "value", "updated_at_utc"]
-STATE_KEYS = ("gold_last_signal", "btc_last_signal", "last_status_date")
+# Whitelist: a key missing here is silently dropped on load. gold_last_watch
+# was missed when the WATCH tier was added, so WATCH dedup never persisted
+# and a fresh WATCH would have re-alerted every hour until stale.
+STATE_KEYS = ("gold_last_signal", "gold_last_watch", "btc_last_signal", "last_status_date")
 
 
 def _empty_state() -> dict:
